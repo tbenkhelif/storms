@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { VersionSelector, type Version } from './components/VersionSelector'
 
 function App() {
   const [url, setUrl] = useState('')
@@ -7,6 +8,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [selectedVersion, setSelectedVersion] = useState<Version>('v1')
 
   const handleGenerateXPath = async () => {
     setIsLoading(true)
@@ -19,7 +21,11 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url, instruction }),
+        body: JSON.stringify({
+          url,
+          instruction,
+          version: selectedVersion
+        }),
       })
 
       if (!response.ok) {
@@ -61,6 +67,11 @@ function App() {
 
       <div className="flex-1 flex overflow-hidden">
         <div className="w-2/5 bg-white border-r border-gray-200 p-6 flex flex-col space-y-6 overflow-y-auto">
+          <VersionSelector
+            selectedVersion={selectedVersion}
+            onVersionChange={setSelectedVersion}
+          />
+
           <div className="space-y-2">
             <label htmlFor="url" className="block text-sm font-medium text-gray-700">
               Target URL
