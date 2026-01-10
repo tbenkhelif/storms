@@ -4,8 +4,10 @@ import asyncio
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import httpx
 from versions import v1_generate, v2_generate
 
 # Fix for Windows event loop policy
@@ -123,3 +125,67 @@ async def get_versions():
             }
         }
     }
+
+@app.get("/api/proxy")
+async def proxy_url(url: str):
+    """Proxy endpoint to serve external websites through our backend"""
+    try:
+        async with httpx.AsyncClient(
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        ) as client:
+            response = await client.get(url, follow_redirects=True, timeout=15.0)
+            response.raise_for_status()
+
+            # Get the content
+            content = response.text
+
+            # Inject our highlighting script capabilities
+            script_injection = '''
+<script>
+console.log('🔧 Storms proxy script injected');
+// Allow parent frame to inject highlighting scripts
+window.addEventListener('message', function(event) {
+    console.log('📨 Received message:', event.data);
+    if (event.origin !== 'http://localhost:5173') {
+        console.log('❌ Wrong origin:', event.origin);
+        return;
+    }
+    if (event.data.type === 'INJECT_HIGHLIGHT_SCRIPT') {
+        try {
+            console.log('🚀 Executing highlight script');
+            eval(event.data.script);
+        } catch(e) {
+            console.error('❌ Error executing highlight script:', e);
+        }
+    }
+});
+
+// Signal that we're ready
+window.parent.postMessage({type: 'PROXY_READY'}, '*');
+</script>'''
+
+            # Inject before closing head tag or body tag
+            if '</head>' in content:
+                content = content.replace('</head>', script_injection + '</head>')
+            elif '</body>' in content:
+                content = content.replace('</body>', script_injection + '</body>')
+            else:
+                content = content + script_injection
+
+            # Return with proper headers
+            return HTMLResponse(
+                content=content,
+                headers={
+                    "Content-Type": "text/html; charset=utf-8",
+                    # Remove X-Frame-Options to allow iframe embedding
+                    "Access-Control-Allow-Origin": "*",
+                    "Cache-Control": "no-cache"
+                }
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=400, detail=f"Request error: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"HTTP {e.response.status_code}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")
