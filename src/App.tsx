@@ -3,17 +3,52 @@ import { useState } from 'react'
 function App() {
   const [url, setUrl] = useState('')
   const [instruction, setInstruction] = useState('')
-  const [generatedXPath, setGeneratedXPath] = useState('')
+  const [xpath, setXpath] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const handleGenerateXPath = () => {
-    setGeneratedXPath("//button[@id='placeholder']")
+  const handleGenerateXPath = async () => {
+    setIsLoading(true)
+    setError(null)
+    setXpath(null)
+
+    try {
+      const response = await fetch('http://localhost:8000/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url, instruction }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setXpath(data.xpath)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleCopyToClipboard = () => {
-    navigator.clipboard.writeText(generatedXPath)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    if (xpath) {
+      navigator.clipboard.writeText(xpath)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const handleClear = () => {
+    setUrl('')
+    setInstruction('')
+    setXpath(null)
+    setError(null)
   }
 
   return (
@@ -54,15 +89,31 @@ function App() {
             />
           </div>
 
-          <button
-            onClick={handleGenerateXPath}
-            disabled={!url || !instruction}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm"
-          >
-            Generate XPath
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleGenerateXPath}
+              disabled={!url || !instruction || isLoading}
+              className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm"
+            >
+              {isLoading ? 'Generating...' : 'Generate XPath'}
+            </button>
+            <button
+              onClick={handleClear}
+              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition shadow-sm"
+            >
+              Clear
+            </button>
+          </div>
 
-          {generatedXPath && (
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">
+                <span className="font-medium">Error:</span> {error}
+              </p>
+            </div>
+          )}
+
+          {xpath && (
             <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-gray-700">Generated XPath:</h3>
@@ -89,7 +140,7 @@ function App() {
               </div>
               <div className="bg-white p-3 rounded-md border border-gray-200">
                 <code className="text-sm text-gray-800 font-mono break-all">
-                  {generatedXPath}
+                  {xpath}
                 </code>
               </div>
             </div>

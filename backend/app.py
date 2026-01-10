@@ -72,7 +72,7 @@ Do not include any explanation, just the XPath."""
 
     try:
         message = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-5-haiku-20241022",
             max_tokens=300,
             temperature=0,
             messages=[
