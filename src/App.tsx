@@ -1,10 +1,18 @@
 import { useState } from 'react'
 import { VersionSelector, type Version } from './components/VersionSelector'
 
+interface GenerateResponse {
+  xpath: string
+  version: string
+  validated: boolean
+  match_count: number
+  element_info: string | null
+}
+
 function App() {
   const [url, setUrl] = useState('')
   const [instruction, setInstruction] = useState('')
-  const [xpath, setXpath] = useState<string | null>(null)
+  const [result, setResult] = useState<GenerateResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -13,7 +21,7 @@ function App() {
   const handleGenerateXPath = async () => {
     setIsLoading(true)
     setError(null)
-    setXpath(null)
+    setResult(null)
 
     try {
       const response = await fetch('http://localhost:8000/api/generate', {
@@ -33,8 +41,8 @@ function App() {
         throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json()
-      setXpath(data.xpath)
+      const data: GenerateResponse = await response.json()
+      setResult(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred')
     } finally {
@@ -43,8 +51,8 @@ function App() {
   }
 
   const handleCopyToClipboard = () => {
-    if (xpath) {
-      navigator.clipboard.writeText(xpath)
+    if (result?.xpath) {
+      navigator.clipboard.writeText(result.xpath)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
@@ -53,9 +61,40 @@ function App() {
   const handleClear = () => {
     setUrl('')
     setInstruction('')
-    setXpath(null)
+    setResult(null)
     setError(null)
   }
+
+  const getValidationStatus = () => {
+    if (!result) return null
+    if (result.validated && result.match_count > 0) {
+      return {
+        badge: '✅ Valid',
+        color: 'green',
+        bgColor: 'bg-green-50',
+        borderColor: 'border-green-200',
+        textColor: 'text-green-600'
+      }
+    } else if (result.validated && result.match_count === 0) {
+      return {
+        badge: '❌ Invalid',
+        color: 'red',
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-200',
+        textColor: 'text-red-600'
+      }
+    } else {
+      return {
+        badge: '⚠️ Unvalidated',
+        color: 'yellow',
+        bgColor: 'bg-yellow-50',
+        borderColor: 'border-yellow-200',
+        textColor: 'text-yellow-600'
+      }
+    }
+  }
+
+  const validationStatus = getValidationStatus()
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -124,10 +163,15 @@ function App() {
             </div>
           )}
 
-          {xpath && (
-            <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-gray-700">Generated XPath:</h3>
+          {result && validationStatus && (
+            <div className={`space-y-3 p-4 rounded-lg border ${validationStatus.bgColor} ${validationStatus.borderColor}`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-medium text-gray-700">Generated XPath</h3>
+                  <span className={`text-xs font-medium px-2 py-1 rounded ${validationStatus.textColor}`}>
+                    {validationStatus.badge}
+                  </span>
+                </div>
                 <button
                   onClick={handleCopyToClipboard}
                   className="text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md transition flex items-center gap-1"
@@ -149,10 +193,24 @@ function App() {
                   )}
                 </button>
               </div>
+
               <div className="bg-white p-3 rounded-md border border-gray-200">
                 <code className="text-sm text-gray-800 font-mono break-all">
-                  {xpath}
+                  {result.xpath}
                 </code>
+              </div>
+
+              <div className="space-y-1 text-sm">
+                {result.validated && result.match_count >= 0 && (
+                  <div className="text-gray-600">
+                    <span className="font-medium">Matches:</span> {result.match_count} element{result.match_count !== 1 ? 's' : ''}
+                  </div>
+                )}
+                {result.element_info && (
+                  <div className="text-gray-600">
+                    <span className="font-medium">Element:</span> {result.element_info}
+                  </div>
+                )}
               </div>
             </div>
           )}

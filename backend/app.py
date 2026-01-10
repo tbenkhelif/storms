@@ -1,5 +1,8 @@
 import os
 import re
+import sys
+import asyncio
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,6 +10,11 @@ import httpx
 from anthropic import Anthropic
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from validator import validate_xpath_with_retry
+
+# Fix for Windows event loop policy
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 load_dotenv()
 
@@ -27,10 +35,14 @@ anthropic_client = Anthropic(
 class GenerateRequest(BaseModel):
     url: str
     instruction: str
+    version: Optional[str] = "v1"
 
 class GenerateResponse(BaseModel):
     xpath: str
     version: str = "v1"
+    validated: bool = False
+    match_count: int = 0
+    element_info: Optional[str] = None
 
 def clean_html(html_content: str) -> str:
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -49,7 +61,7 @@ def clean_html(html_content: str) -> str:
 async def generate_xpath(request: GenerateRequest):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(request.url, follow_redirects=True)
+            response = await client.get(request.url, follow_redirects=True, timeout=15.0)
             response.raise_for_status()
             html_content = response.text
     except httpx.RequestError as e:
@@ -87,11 +99,29 @@ Do not include any explanation, just the XPath."""
 
         xpath = xpath.strip('"\'')
 
-        return GenerateResponse(xpath=xpath, version="v1")
+        # Try validation, but don't fail if Playwright has issues
+        try:
+            validation_result = await validate_xpath_with_retry(request.url, xpath)
+        except Exception as e:
+            print(f"Validation skipped due to error: {e}")
+            validation_result = {
+                "valid": False,
+                "match_count": 0,
+                "element_info": None,
+                "error": "Validation unavailable"
+            }
+
+        return GenerateResponse(
+            xpath=xpath,
+            version=request.version or "v1",
+            validated=validation_result["valid"],
+            match_count=validation_result["match_count"],
+            element_info=validation_result["element_info"]
+        )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calling Claude API: {str(e)}")
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {"status": "healthy", "playwright_ready": True}
