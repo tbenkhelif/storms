@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface ProcessLogEntry {
   step: string
@@ -13,20 +13,44 @@ interface ProcessLogProps {
 export function ProcessLog({ entries }: ProcessLogProps) {
   const [visibleEntries, setVisibleEntries] = useState<ProcessLogEntry[]>([])
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set())
+  const timeoutRefs = useRef<NodeJS.Timeout[]>([])
 
   // Animate entries appearing one by one
   useEffect(() => {
+    // Clear any existing timeouts
+    timeoutRefs.current.forEach(timeout => clearTimeout(timeout))
+    timeoutRefs.current = []
+
     if (entries.length === 0) {
       setVisibleEntries([])
       return
     }
 
+    // Deduplicate entries based on step + status combination
+    const uniqueEntries = entries.filter((entry, index, self) =>
+      index === self.findIndex((e) =>
+        e.step === entry.step && e.status === entry.status
+      )
+    )
+
     setVisibleEntries([])
-    entries.forEach((entry, index) => {
-      setTimeout(() => {
-        setVisibleEntries(prev => [...prev, entry])
+    uniqueEntries.forEach((entry, index) => {
+      const timeout = setTimeout(() => {
+        setVisibleEntries(prev => {
+          // Prevent duplicates in visible entries too
+          const exists = prev.some(e => e.step === entry.step && e.status === entry.status)
+          if (exists) return prev
+          return [...prev, entry]
+        })
       }, index * 150)
+      timeoutRefs.current.push(timeout)
     })
+
+    // Cleanup function
+    return () => {
+      timeoutRefs.current.forEach(timeout => clearTimeout(timeout))
+      timeoutRefs.current = []
+    }
   }, [entries])
 
   const getStatusIcon = (status: string) => {
