@@ -1,5 +1,12 @@
 import { useState } from 'react'
 import { VersionSelector, type Version } from './components/VersionSelector'
+import { ProcessLog } from './components/ProcessLog'
+
+interface ProcessLogEntry {
+  step: string
+  status: string
+  details?: string
+}
 
 interface GenerateResponse {
   xpath: string
@@ -7,6 +14,7 @@ interface GenerateResponse {
   validated: boolean
   match_count: number
   element_info: string | null
+  process_log?: ProcessLogEntry[]
 }
 
 function App() {
@@ -95,6 +103,7 @@ function App() {
   }
 
   const validationStatus = getValidationStatus()
+  const showProcessLog = result?.process_log && result.process_log.length > 0 && (selectedVersion === 'v2' || selectedVersion === 'v3')
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -214,6 +223,10 @@ function App() {
               </div>
             </div>
           )}
+
+          {showProcessLog && (
+            <ProcessLog entries={result.process_log || []} />
+          )}
         </div>
 
         <div className="w-3/5 bg-gray-100 p-4">
@@ -229,7 +242,7 @@ function App() {
               <div className="h-full flex items-center justify-center text-gray-400">
                 <div className="text-center">
                   <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s-1.343-9 3-9m-9 9a9 9 0 019-9" />
                   </svg>
                   <p className="text-lg">Enter a URL to preview the website</p>
                 </div>
