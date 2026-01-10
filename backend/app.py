@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import httpx
-from versions import v1_generate, v2_generate
+from versions import v1_generate, v2_generate, v3_generate
 
 # Fix for Windows event loop policy
 if sys.platform == "win32":
@@ -89,8 +89,7 @@ async def generate_xpath(request: GenerateRequest):
         elif version == "v2":
             result = await v2_generate(request.url, request.instruction)
         elif version == "v3":
-            # V3 not implemented yet, fall back to v2
-            result = await v2_generate(request.url, request.instruction)
+            result = await v3_generate(request.url, request.instruction)
         else:
             # Default to v1 for unknown versions
             result = await v1_generate(request.url, request.instruction)
@@ -152,9 +151,9 @@ async def get_versions():
             },
             "v3": {
                 "name": "Enterprise",
-                "description": "Agentic approach with advanced tools (coming soon)",
-                "features": ["Tool-augmented LLM", "Robustness scoring", "Self-correction"],
-                "active": False
+                "description": "Agentic approach with Claude tool use and self-correction",
+                "features": ["Tool-augmented LLM", "Robustness scoring", "Self-correction", "Page inspection"],
+                "active": True
             }
         }
     }
@@ -261,8 +260,7 @@ async def evaluate_version(request: EvaluateRequest):
             elif request.version == "v2":
                 result = await v2_generate(test_case["url"], test_case["instruction"])
             elif request.version == "v3":
-                # V3 not implemented yet, fall back to v2
-                result = await v2_generate(test_case["url"], test_case["instruction"])
+                result = await v3_generate(test_case["url"], test_case["instruction"])
             else:
                 raise HTTPException(status_code=400, detail=f"Unknown version: {request.version}")
 

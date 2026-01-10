@@ -49,7 +49,7 @@ export function EvaluationDashboard() {
   const availableVersions = [
     { id: 'v1', name: 'V1 (MVP)', description: 'Direct LLM call' },
     { id: 'v2', name: 'V2 (Validated)', description: 'Heuristics + validation' },
-    { id: 'v3', name: 'V3 (Enterprise)', description: 'Agentic approach (coming soon)', disabled: true }
+    { id: 'v3', name: 'V3 (Enterprise)', description: 'Claude tool use + self-correction', disabled: false }
   ]
 
   useEffect(() => {
