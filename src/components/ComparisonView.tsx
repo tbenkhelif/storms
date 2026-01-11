@@ -62,7 +62,9 @@ export function ComparisonView({ comparisonData, isLoading }: ComparisonViewProp
   }
 
   const copyToClipboard = async (xpath: string, version: string) => {
-    await navigator.clipboard.writeText(xpath)
+    // Wrap XPath in $x() for easy console testing
+    const consoleReadyXPath = `$x("${xpath}")`
+    await navigator.clipboard.writeText(consoleReadyXPath)
     setCopiedVersion(version)
     setTimeout(() => setCopiedVersion(null), 2000)
   }

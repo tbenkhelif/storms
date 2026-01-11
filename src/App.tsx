@@ -126,7 +126,9 @@ function App() {
 
   const handleCopyToClipboard = () => {
     if (result?.xpath) {
-      navigator.clipboard.writeText(result.xpath)
+      // Wrap XPath in $x() for easy console testing
+      const consoleReadyXPath = `$x("${result.xpath}")`
+      navigator.clipboard.writeText(consoleReadyXPath)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
