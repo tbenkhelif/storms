@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import httpx
 from versions import v1_generate, v2_generate, v3_generate
+from utils.xpath_validator import validate_xpath_syntax, test_xpath_on_page
+from utils.xpath_fixer import fix_xpath
 
 # Fix for Windows event loop policy
 if sys.platform == "win32":
@@ -94,6 +96,32 @@ class CompareResponse(BaseModel):
     v3: GenerateResponse
     execution_times: Dict[str, float]
     summary: Dict[str, Any]
+
+class ValidateXPathRequest(BaseModel):
+    xpath: str
+    url: Optional[str] = None
+    test_live: bool = False
+
+class ValidateXPathResponse(BaseModel):
+    is_valid: bool
+    is_likely_xpath: bool
+    syntax_errors: List[str]
+    warnings: List[str]
+    suggestions: List[str]
+    complexity: Optional[Dict[str, Any]] = None
+    live_test_result: Optional[Dict[str, Any]] = None
+
+class FixXPathRequest(BaseModel):
+    xpath: str
+    instruction: Optional[str] = None
+
+class FixXPathResponse(BaseModel):
+    original_xpath: str
+    fixed_xpath: str
+    changes_made: List[str]
+    confidence: float
+    is_fixed: bool
+    suggestions: List[str]
 
 @app.post("/api/generate", response_model=GenerateResponse)
 async def generate_xpath(request: GenerateRequest):
@@ -486,3 +514,46 @@ async def evaluate_version(request: EvaluateRequest):
         metrics=metrics,
         results=results
     )
+
+@app.post("/api/validate-xpath", response_model=ValidateXPathResponse)
+async def validate_xpath_endpoint(request: ValidateXPathRequest):
+    """Validate XPath syntax and optionally test on live page"""
+    try:
+        # Validate syntax
+        validation_result = validate_xpath_syntax(request.xpath)
+
+        live_test_result = None
+        if request.test_live and request.url:
+            # Test on live page
+            live_test_result = await test_xpath_on_page(request.xpath, request.url)
+
+        return ValidateXPathResponse(
+            is_valid=validation_result["is_valid"],
+            is_likely_xpath=validation_result["is_likely_xpath"],
+            syntax_errors=validation_result["syntax_errors"],
+            warnings=validation_result["warnings"],
+            suggestions=validation_result["suggestions"],
+            complexity=validation_result["complexity"],
+            live_test_result=live_test_result
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Validation error: {str(e)}")
+
+@app.post("/api/fix-xpath", response_model=FixXPathResponse)
+async def fix_xpath_endpoint(request: FixXPathRequest):
+    """Attempt to fix broken XPath syntax"""
+    try:
+        fix_result = fix_xpath(request.xpath, request.instruction)
+
+        return FixXPathResponse(
+            original_xpath=fix_result["original_xpath"],
+            fixed_xpath=fix_result["fixed_xpath"],
+            changes_made=fix_result["changes_made"],
+            confidence=fix_result["confidence"],
+            is_fixed=fix_result["is_fixed"],
+            suggestions=fix_result["suggestions"]
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fix error: {str(e)}")
