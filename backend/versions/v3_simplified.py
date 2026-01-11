@@ -36,42 +36,36 @@ except ImportError as e:
     def fix_xpath(xpath, instruction=None): return {"is_fixed": False, "fixed_xpath": xpath, "changes_made": [], "confidence": 0.0}
 
 
-def extract_relevant_html(soup: BeautifulSoup, instruction: str, expanded_mode: bool = False) -> str:
-    """Extract relevant HTML elements with adaptive context based on instruction type"""
+def extract_relevant_html(soup: BeautifulSoup, instruction: str, expanded_mode: bool = False, enrichment_data: Dict = None) -> str:
+    """Extract relevant HTML elements with generic approach and optional LLM enrichment"""
 
-    instruction_lower = instruction.lower()
-    content_terms = extract_content_terms(instruction)
-
-    # Base interactive elements
+    # Base interactive elements - always include these
     relevant_selectors = [
         'input', 'button', 'a', 'select', 'textarea',
         '[role="button"]', '[role="link"]', '[role="textbox"]',
         '[onclick]', '[type="submit"]', '[type="button"]'
     ]
 
-    # Semantic sections to include based on instruction type and expanded mode
-    semantic_selectors = []
+    # Always include navigation context - no specific rules
+    semantic_selectors = ['nav', 'header', 'footer']
 
-    # Always include navigation for link-related instructions
-    if any(term in instruction_lower for term in ['about', 'contact', 'help', 'support', 'login', 'sign']):
-        semantic_selectors.extend(['nav', 'header', 'footer'])
+    # Use enrichment data to expand search if available
+    if expanded_mode and enrichment_data and enrichment_data.get("enriched"):
+        # Add LLM-suggested context areas
+        if enrichment_data.get("context_areas"):
+            semantic_selectors.extend(enrichment_data["context_areas"])
+
+        # Add LLM-suggested element types to relevant selectors
+        if enrichment_data.get("element_types"):
+            relevant_selectors.extend(enrichment_data["element_types"])
 
     # Expanded mode: cast a wider net when initial generation fails
     if expanded_mode:
         semantic_selectors.extend([
             'main', '[role="main"]', '[role="navigation"]',
-            '.navigation', '.nav', '.menu', '.header', '.footer'
+            '.navigation', '.nav', '.menu', '.header', '.footer',
+            'section', 'article'
         ])
-        # Include more specific content areas
-        if any(term in content_terms for term in ['contact', 'support', 'help']):
-            semantic_selectors.extend([
-                '[href*="contact"]', '[href*="support"]', '[href*="help"]',
-                'section', 'article'
-            ])
-        elif any(term in content_terms for term in ['about', 'company']):
-            semantic_selectors.extend([
-                '[href*="about"]', '[href*="company"]', 'section', 'article'
-            ])
 
     elements = []
     seen_elements = set()  # Avoid duplicates
@@ -218,6 +212,58 @@ def extract_content_terms(instruction: str) -> List[str]:
     return list(set(content_terms))  # Remove duplicates
 
 
+async def enrich_instruction_with_llm(instruction: str) -> Dict[str, Any]:
+    """Use LLM to analyze instruction and suggest element types and search strategies"""
+
+    if not client:
+        return {"enriched": False}
+
+    enrichment_prompt = f"""Analyze this user instruction and identify what type of web element they likely want to interact with.
+
+Instruction: "{instruction}"
+
+Respond with a JSON object containing:
+1. "element_types": List of likely HTML elements (e.g., ["button", "input", "a"])
+2. "search_terms": List of text content to look for
+3. "attributes": List of likely attribute patterns
+4. "context_areas": List of page sections to focus on (e.g., ["nav", "header", "main"])
+
+Keep it simple and practical. Focus on the most likely elements.
+
+Example response:
+{{
+  "element_types": ["button", "a"],
+  "search_terms": ["Contact", "Contact Us"],
+  "attributes": ["aria-label", "title"],
+  "context_areas": ["nav", "header", "footer"]
+}}"""
+
+    try:
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            messages=[{"role": "user", "content": enrichment_prompt}],
+            max_tokens=300,
+            temperature=0.2
+        )
+
+        response_text = response.content[0].text if response.content else ""
+
+        # Try to extract JSON
+        import json
+        # Look for JSON in the response
+        json_match = re.search(r'\{[^}]+\}', response_text, re.DOTALL)
+        if json_match:
+            enrichment_data = json.loads(json_match.group(0))
+            enrichment_data["enriched"] = True
+            return enrichment_data
+
+    except Exception as e:
+        pass
+
+    # Fallback to no enrichment
+    return {"enriched": False}
+
+
 async def score_xpath_quality(xpath: str, page, instruction: str) -> Tuple[int, str]:
     """Score XPath quality based on specificity and relevance"""
 
@@ -263,86 +309,45 @@ async def score_xpath_quality(xpath: str, page, instruction: str) -> Tuple[int, 
 
 
 async def quick_refine_xpath(xpath: str, instruction: str, page) -> str:
-    """Progressive refinement with content-first approach"""
+    """Simple content-based refinement approach"""
 
-    instruction_lower = instruction.lower()
     content_terms = extract_content_terms(instruction)
-
-    # Progressive refinement levels (try in order)
     refinement_candidates = []
 
-    # Level 1: Content-specific selectors (highest priority)
+    # Only use content terms for refinement - no hardcoded rules
     if content_terms:
         for term in content_terms:
             term_capitalized = term.capitalize()
             refinement_candidates.extend([
-                # Text content matching
+                # Text content matching - various capitalizations
                 f"//a[contains(text(), '{term_capitalized}')]",
                 f"//a[contains(text(), '{term.lower()}')]",
-                f"//a[contains(text(), '{term.upper()}')]",
                 f"//button[contains(text(), '{term_capitalized}')]",
                 f"//button[contains(text(), '{term.lower()}')]",
 
                 # Attribute matching
                 f"//a[contains(@aria-label, '{term}')]",
-                f"//a[contains(@title, '{term}')]",
                 f"//button[contains(@aria-label, '{term}')]",
                 f"//input[contains(@value, '{term_capitalized}')]",
 
-                # Combined navigation + content
+                # Navigation context
                 f"//nav//a[contains(text(), '{term_capitalized}')]",
                 f"//header//a[contains(text(), '{term_capitalized}')]",
                 f"//footer//a[contains(text(), '{term_capitalized}')]"
             ])
 
-    # Level 2: Semantic/functional patterns based on instruction context
-    if any(word in instruction_lower for word in ['search', 'recherche', 'buscar']):
-        refinement_candidates.extend([
-            "//input[@type='search']",
-            "//input[contains(@placeholder, 'Search') or contains(@placeholder, 'search')]",
-            "//input[contains(@aria-label, 'Search') or contains(@aria-label, 'search')]",
-            "//input[@name='q' or @name='query' or @name='search']",
-            "//button[contains(@class, 'search')]"
-        ])
-
-    if any(word in instruction_lower for word in ['login', 'sign in', 'log in']):
-        refinement_candidates.extend([
-            "//button[contains(text(), 'Login') or contains(text(), 'Sign')]",
-            "//a[contains(text(), 'Login') or contains(text(), 'Sign')]",
-            "//input[@value='Login' or @value='Sign in']",
-            "//button[@type='submit']"
-        ])
-
-    if any(word in instruction_lower for word in ['contact', 'support', 'help']):
-        refinement_candidates.extend([
-            "//a[contains(text(), 'Contact')]",
-            "//a[contains(text(), 'Support')]",
-            "//a[contains(text(), 'Help')]"
-        ])
-
-    # Level 3: Combined structure + action hints (only if we have content terms)
-    if content_terms and any(word in instruction_lower for word in ['click', 'button']):
-        for term in content_terms:
-            term_cap = term.capitalize()
-            refinement_candidates.extend([
-                f"//button[contains(., '{term_cap}')]",
-                f"//a[@role='button' and contains(., '{term_cap}')]",
-                f"//div[@role='button' and contains(., '{term_cap}')]"
-            ])
-
-    # Level 4: Generic structural fallbacks (lowest priority)
+    # Basic fallback for button/input actions
+    instruction_lower = instruction.lower()
     if any(word in instruction_lower for word in ['button', 'click', 'submit']):
         refinement_candidates.extend([
             "//button[not(@disabled)]",
-            "//a[@role='button']",
-            "//input[@type='submit' or @type='button']",
-            "//button"
+            "//input[@type='submit']",
+            "//a[@role='button']"
         ])
 
     # Try refinements and score them
     best_xpath = xpath
     best_score = 0
-    best_description = "Original XPath"
 
     for candidate in refinement_candidates:
         try:
@@ -350,21 +355,17 @@ async def quick_refine_xpath(xpath: str, instruction: str, page) -> str:
             if score > best_score:
                 best_xpath = candidate
                 best_score = score
-                best_description = description
         except:
             continue
 
     return best_xpath
 
 
-def generate_adaptive_prompt(instruction: str, attempt_number: int = 1) -> Tuple[str, str]:
-    """Generate adaptive system and user prompts based on instruction type"""
+def generate_adaptive_prompt(instruction: str, attempt_number: int = 1, enrichment_data: Dict = None) -> Tuple[str, str]:
+    """Generate clean system and user prompts with optional LLM enrichment context"""
 
-    content_terms = extract_content_terms(instruction)
-    instruction_lower = instruction.lower()
-
-    # Base system prompt
-    base_system = """You are an XPath expert. Generate a robust XPath selector based on the HTML structure provided.
+    # Simple, generic system prompt
+    system_prompt = """You are an XPath expert. Generate a robust XPath selector based on the HTML structure provided.
 
 Rules:
 1. Prefer semantic attributes in this order: @id, @name, @aria-label, @role, @type
@@ -373,46 +374,25 @@ Rules:
 4. Keep it simple and readable
 5. Return ONLY the XPath expression, nothing else"""
 
-    # Adaptive guidance based on instruction type
-    adaptive_guidance = ""
+    # Add enrichment context if available
+    if attempt_number > 1 and enrichment_data and enrichment_data.get("enriched"):
+        system_prompt += f"""
 
-    if any(term in instruction_lower for term in ['about', 'company']):
-        adaptive_guidance = """
-6. Focus on navigation links, footer links, or header elements
-7. Look for text containing 'About', 'Company', or similar terms
-8. Prefer links in header/nav/footer sections over content areas"""
+ENRICHMENT CONTEXT: Based on analysis, focus on:
+- Element types: {enrichment_data.get('element_types', [])}
+- Search terms: {enrichment_data.get('search_terms', [])}
+- Key attributes: {enrichment_data.get('attributes', [])}"""
 
-    elif any(term in instruction_lower for term in ['contact', 'support', 'help']):
-        adaptive_guidance = """
-6. Focus on navigation, footer, or contact-specific sections
-7. Look for text containing 'Contact', 'Support', 'Help', or 'Sales'
-8. Prefer actual contact/sales links over chat buttons
-9. Check header, footer, and main navigation areas"""
-
-    elif any(term in instruction_lower for term in ['login', 'sign in', 'log in']):
-        adaptive_guidance = """
-6. Focus on authentication-related elements
-7. Look for login forms, sign-in buttons, or account areas
-8. Check header navigation for user account links"""
-
-    elif any(term in instruction_lower for term in ['search', 'find']):
-        adaptive_guidance = """
-6. Focus on search inputs and search buttons
-7. Look for search-related attributes and placeholders
-8. Check for search forms and search controls"""
-
-    # Adjust for retry attempts
+    # Add retry context if needed
     if attempt_number > 1:
-        adaptive_guidance += f"""
+        system_prompt += f"""
 
 RETRY ATTEMPT #{attempt_number}: The previous attempt failed validation.
 - Be more thorough in examining the provided HTML
 - Consider alternative element types or broader selectors
-- Focus on the most relevant semantic sections provided"""
+- Focus on the most relevant elements provided"""
 
-    system_prompt = base_system + adaptive_guidance
-
-    # Adaptive user prompt
+    # Simple user prompt
     if attempt_number > 1:
         user_prompt_prefix = f"RETRY #{attempt_number} - Previous XPath failed validation.\n\n"
     else:
@@ -469,13 +449,24 @@ async def v3_generate(url: str, instruction: str) -> Dict[str, Any]:
 
             # Adaptive XPath generation with intelligent failure recovery
             generated_xpath = None
+            enrichment_data = None
+
             for attempt in range(1, 3):  # Maximum 2 attempts
+                # On retry, use LLM enrichment to understand what we're really looking for
+                if attempt > 1 and not enrichment_data:
+                    log_step("llm_enrichment", "running", "Analyzing instruction with LLM for better context")
+                    enrichment_data = await enrich_instruction_with_llm(instruction)
+                    if enrichment_data.get("enriched"):
+                        log_step("llm_enrichment", "success", f"Got enrichment: {enrichment_data.get('element_types', [])}")
+                    else:
+                        log_step("llm_enrichment", "warning", "No enrichment available")
+
                 # Extract relevant HTML (expanded mode for retry)
                 expanded_mode = attempt > 1
                 mode_desc = "expanded mode" if expanded_mode else "standard mode"
                 log_step("html_extraction", "running", f"Extracting relevant elements ({mode_desc})")
 
-                simplified_html = extract_relevant_html(soup, instruction, expanded_mode)
+                simplified_html = extract_relevant_html(soup, instruction, expanded_mode, enrichment_data)
 
                 if not simplified_html:
                     log_step("html_extraction", "warning", "No interactive elements found")
@@ -486,7 +477,7 @@ async def v3_generate(url: str, instruction: str) -> Dict[str, Any]:
 
                 # Generate adaptive prompts
                 log_step("xpath_generation", "running", f"Generating XPath with Claude (attempt {attempt})")
-                system_prompt, user_prompt_template = generate_adaptive_prompt(instruction, attempt)
+                system_prompt, user_prompt_template = generate_adaptive_prompt(instruction, attempt, enrichment_data)
 
                 user_prompt = user_prompt_template.format(url=url, html=simplified_html)
 
