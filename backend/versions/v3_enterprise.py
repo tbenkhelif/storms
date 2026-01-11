@@ -15,6 +15,7 @@ try:
     from playwright.async_api import async_playwright, Browser, Page
     import anthropic
     from bs4 import BeautifulSoup
+    from .robustness import test_robustness, get_robustness_display
 
     # Initialize Claude client
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -361,23 +362,32 @@ Available tools:
 2. validate_xpath: Test if an XPath works and get element details
 3. get_context: Get surrounding HTML context for an element
 
-Process:
-1. First, inspect the page to understand what elements exist related to the instruction
-2. Generate an XPath candidate based on your findings
-3. Validate it to ensure it works and matches the right element(s)
-4. If it doesn't work or is too broad/narrow, analyze and try again
-5. Prefer XPaths that use stable attributes like text content, IDs, or aria-labels
-6. Avoid fragile selectors that rely only on position or complex nesting
+KEY PRINCIPLES:
+- Focus on the user's intent, not literal words
+- ALWAYS validate your XPath before finalizing it
+- If validation returns 0 matches, you MUST try a different approach
+- Use multiple inspect_page calls with different search terms if needed
 
-Return your final XPath once you're confident it's robust and correct."""
+Process:
+1. Inspect the page to understand what elements exist
+2. Generate an XPath based on your findings
+3. Validate it to ensure it matches elements (REQUIRED)
+4. If no matches, revise your approach and try again
+5. Prefer stable selectors (text content, IDs, aria-labels)
+6. Avoid position-based or deeply nested selectors
+
+Only return an XPath that you have validated and confirmed works."""
 
             user_prompt = f"""The instruction is: "{instruction}"
 
-Please find a robust XPath selector for this instruction. Start by inspecting the page to understand what elements are available."""
+Please find a robust XPath selector for this instruction.
+Start by inspecting the page to understand what elements are available.
+IMPORTANT: You MUST validate your XPath to ensure it actually matches elements on the page before finalizing it.
+If your XPath doesn't match any elements, try a different approach."""
 
             # Claude conversation with tools
             conversation_history = []
-            max_iterations = 8
+            max_iterations = 10
             iteration = 0
             final_xpath = None
             tool_use_count = 0
@@ -395,11 +405,16 @@ Please find a robust XPath selector for this instruction. Start by inspecting th
                             "content": user_prompt
                         })
 
-                    # After several tool uses, force Claude to give final answer
-                    if tool_use_count >= 3:
+                    # After several tool uses, encourage validation and final answer
+                    if tool_use_count >= 4 and tool_use_count < 7:
                         messages.append({
                             "role": "user",
-                            "content": "You've done enough investigation. Please provide your final XPath selector now. Just return the XPath - no more tool calls needed."
+                            "content": "Please validate your XPath to ensure it matches elements. If it doesn't match, try a different approach. If it does match, provide your final XPath."
+                        })
+                    elif tool_use_count >= 7:
+                        messages.append({
+                            "role": "user",
+                            "content": "You've investigated enough. Please provide your best XPath now based on what you've learned."
                         })
 
                     # Define available tools for Claude
@@ -454,13 +469,13 @@ Please find a robust XPath selector for this instruction. Start by inspecting th
                     ]
 
                     # Call Claude with tools (or force no tools after enough usage)
-                    tool_choice = {"type": "none"} if tool_use_count >= 3 else {"type": "auto"}
+                    tool_choice = {"type": "none"} if tool_use_count >= 7 else {"type": "auto"}
 
                     response = client.messages.create(
                         model="claude-sonnet-4-5-20250929",
                         system=system_prompt,
                         messages=messages,
-                        tools=tools if tool_use_count < 3 else [],
+                        tools=tools if tool_use_count < 7 else [],
                         tool_choice=tool_choice,
                         max_tokens=4000
                     )
@@ -577,10 +592,74 @@ Please find a robust XPath selector for this instruction. Start by inspecting th
                     "score_reasons": ["Failed to generate XPath"]
                 }
 
-            # Final validation
-            log_step("final_validation", "running", f"Validating final XPath: {final_xpath}")
+            # Validation with retry logic
+            log_step("final_validation", "running", f"Validating XPath: {final_xpath}")
 
-            try:
+            validation_attempts = 0
+            max_validation_retries = 3
+            validated_xpath = None
+
+            while validation_attempts < max_validation_retries:
+                validation_attempts += 1
+
+                try:
+                    elements = await page.query_selector_all(f"xpath={final_xpath}")
+                    match_count = len(elements)
+
+                    if match_count > 0:
+                        # Success - XPath matches elements
+                        validated_xpath = final_xpath
+                        break
+                    else:
+                        # XPath doesn't match - need to retry
+                        log_step("validation_retry", "warning", f"XPath matches 0 elements (attempt {validation_attempts}/{max_validation_retries})")
+
+                        if validation_attempts < max_validation_retries:
+                            # Ask Claude to try again with feedback
+                            retry_prompt = f"""Your XPath '{final_xpath}' doesn't match any elements on the page.
+
+The original instruction was: {instruction}
+
+Please provide an alternative XPath that will actually match elements. Consider:
+                            - Using less specific selectors
+                            - Trying different attributes or text patterns
+                            - Looking for common UI patterns (buttons, links, inputs)
+
+Provide just the XPath, nothing else."""
+
+                            retry_response = client.messages.create(
+                                model="claude-sonnet-4-5-20250929",
+                                system="You are an XPath expert. Generate a working XPath selector.",
+                                messages=[{"role": "user", "content": retry_prompt}],
+                                max_tokens=500
+                            )
+
+                            # Extract new XPath from retry response
+                            retry_text = retry_response.content[0].text if retry_response.content else ""
+
+                            # Try to extract XPath from retry response
+                            xpath_patterns = [
+                                r'(//[^\n\r"\'"`]+)',  # Direct XPath
+                                r'[`"\']+(//[^`"\'"`]+)[`"\']+',  # Quoted XPath
+                            ]
+
+                            for pattern in xpath_patterns:
+                                match = re.search(pattern, retry_text, re.IGNORECASE)
+                                if match:
+                                    final_xpath = match.group(1).strip()
+                                    log_step("xpath_retry", "success", f"New XPath to try: {final_xpath}")
+                                    break
+                            else:
+                                log_step("xpath_retry", "failed", "Could not extract alternative XPath")
+                                break
+
+                except Exception as e:
+                    log_step("validation_error", "error", f"Validation error: {str(e)}")
+                    break
+
+            # Check if we found a valid XPath
+            if validated_xpath:
+                final_xpath = validated_xpath
                 elements = await page.query_selector_all(f"xpath={final_xpath}")
                 match_count = len(elements)
 
@@ -593,11 +672,42 @@ Please find a robust XPath selector for this instruction. Start by inspecting th
                     if text_content:
                         element_info += f" with text '{text_content}'"
 
-                    # Calculate robustness score
-                    score, reasons = calculate_robustness_score(final_xpath, {"tag": tag_name, "text": text_content})
+                    # Calculate basic robustness score from XPath structure
+                    basic_score, basic_reasons = calculate_robustness_score(final_xpath, {"tag": tag_name, "text": text_content})
 
                     log_step("final_validation", "success", f"XPath validates: {match_count} matches")
-                    log_step("robustness_scoring", "completed", f"Score: {score}/5")
+                    log_step("basic_scoring", "completed", f"Basic score: {basic_score}/5")
+
+                    # Run comprehensive robustness testing
+                    log_step("robustness_testing", "running", "Testing XPath against page mutations")
+
+                    try:
+                        robustness_result = await test_robustness(final_xpath, content, url)
+                        robustness_percentage = robustness_result["score"] * 100
+                        robustness_display = get_robustness_display(robustness_result["score"])
+
+                        log_step("robustness_testing", "success", f"Robustness: {robustness_percentage:.1f}% ({len(robustness_result['passed'])}/{len(robustness_result['passed']) + len(robustness_result['failed'])} mutations survived)")
+
+                        # Combine basic score with robustness testing
+                        final_score = min(5, basic_score + (robustness_result["score"] * 2))  # Max 5 points
+                        final_reasons = basic_reasons + [f"Robustness: {robustness_display['label']} ({robustness_percentage:.0f}%)"]
+
+                    except Exception as e:
+                        log_step("robustness_testing", "error", f"Robustness test failed: {str(e)}")
+                        robustness_result = {
+                            "score": 0.5,  # Assume moderate robustness if test fails
+                            "passed": [],
+                            "failed": ["test_error"],
+                            "details": {"error": str(e)}
+                        }
+                        robustness_display = {
+                            "icon": "⚠️",
+                            "label": "Unknown",
+                            "color": "gray",
+                            "description": "Robustness test failed"
+                        }
+                        final_score = basic_score
+                        final_reasons = basic_reasons + ["Robustness test failed"]
 
                     await browser.close()
 
@@ -607,26 +717,26 @@ Please find a robust XPath selector for this instruction. Start by inspecting th
                         "match_count": match_count,
                         "element_info": element_info,
                         "process_log": process_log,
-                        "robustness_score": score,
-                        "score_reasons": reasons
+                        "robustness_score": final_score,
+                        "score_reasons": final_reasons,
+                        "robustness_testing": robustness_result,
+                        "robustness_display": robustness_display
                     }
-                else:
-                    log_step("final_validation", "failed", "XPath matches no elements")
+            else:
+                # All validation attempts failed
+                log_step("final_validation", "failed", f"XPath validation failed after {validation_attempts} attempts")
 
-            except Exception as e:
-                log_step("final_validation", "error", f"Validation error: {str(e)}")
+                await browser.close()
 
-            await browser.close()
-
-            return {
-                "xpath": final_xpath,
-                "validated": False,
-                "match_count": 0,
-                "element_info": "Generated but validation failed",
-                "process_log": process_log,
-                "robustness_score": 0,
-                "score_reasons": ["Validation failed"]
-            }
+                return {
+                    "xpath": final_xpath,
+                    "validated": False,
+                    "match_count": 0,
+                    "element_info": f"Validation failed after {validation_attempts} attempts",
+                    "process_log": process_log,
+                    "robustness_score": 0,
+                    "score_reasons": ["No matching elements found"]
+                }
 
         except Exception as e:
             log_step("critical_error", "failed", str(e))

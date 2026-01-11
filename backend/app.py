@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -39,6 +39,12 @@ class ProcessLogEntry(BaseModel):
     status: str
     details: Optional[str] = None
 
+class RobustnessDisplay(BaseModel):
+    icon: str
+    label: str
+    color: str
+    description: str
+
 class GenerateResponse(BaseModel):
     xpath: str
     version: str = "v1"
@@ -46,6 +52,7 @@ class GenerateResponse(BaseModel):
     match_count: int = 0
     element_info: Optional[str] = None
     process_log: Optional[List[ProcessLogEntry]] = None
+    robustness_display: Optional[RobustnessDisplay] = None
 
 class EvaluateRequest(BaseModel):
     version: str
@@ -77,6 +84,17 @@ class EvaluateResponse(BaseModel):
     metrics: EvaluationMetrics
     results: List[EvaluationResult]
 
+class CompareRequest(BaseModel):
+    url: str
+    instruction: str
+
+class CompareResponse(BaseModel):
+    v1: GenerateResponse
+    v2: GenerateResponse
+    v3: GenerateResponse
+    execution_times: Dict[str, float]
+    summary: Dict[str, Any]
+
 @app.post("/api/generate", response_model=GenerateResponse)
 async def generate_xpath(request: GenerateRequest):
     """Generate XPath using the specified version strategy"""
@@ -101,13 +119,19 @@ async def generate_xpath(request: GenerateRequest):
                 ProcessLogEntry(**entry) for entry in result["process_log"]
             ]
 
+        # Handle robustness_display if present
+        robustness_display = None
+        if "robustness_display" in result:
+            robustness_display = RobustnessDisplay(**result["robustness_display"])
+
         return GenerateResponse(
             xpath=result["xpath"],
             version=version,
             validated=result.get("validated", False),
             match_count=result.get("match_count", 0),
             element_info=result.get("element_info"),
-            process_log=process_log
+            process_log=process_log,
+            robustness_display=robustness_display
         )
 
     except HTTPException:
@@ -221,6 +245,138 @@ window.parent.postMessage({type: 'PROXY_READY'}, '*');
         raise HTTPException(status_code=e.response.status_code, detail=f"HTTP {e.response.status_code}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")
+
+@app.post("/api/compare", response_model=CompareResponse)
+async def compare_versions(request: CompareRequest):
+    """Run all versions and compare results"""
+
+    async def run_version(version: str):
+        """Run a single version and return result with timing"""
+        start_time = time.time()
+        try:
+            if version == "v1":
+                result = await v1_generate(request.url, request.instruction)
+            elif version == "v2":
+                result = await v2_generate(request.url, request.instruction)
+            elif version == "v3":
+                result = await v3_generate(request.url, request.instruction)
+            else:
+                raise ValueError(f"Unknown version: {version}")
+
+            execution_time = time.time() - start_time
+
+            # Convert process_log entries to ProcessLogEntry objects if present
+            process_log = None
+            if "process_log" in result:
+                process_log = [
+                    ProcessLogEntry(**entry) for entry in result["process_log"]
+                ]
+
+            # Handle robustness_display if present
+            robustness_display = None
+            if "robustness_display" in result:
+                robustness_display = RobustnessDisplay(**result["robustness_display"])
+
+            response = GenerateResponse(
+                xpath=result["xpath"],
+                version=version,
+                validated=result.get("validated", False),
+                match_count=result.get("match_count", 0),
+                element_info=result.get("element_info"),
+                process_log=process_log,
+                robustness_display=robustness_display
+            )
+
+            return response, execution_time
+
+        except Exception as e:
+            execution_time = time.time() - start_time
+            # Return error response
+            error_response = GenerateResponse(
+                xpath="//body",
+                version=version,
+                validated=False,
+                match_count=0,
+                element_info=f"Error: {str(e)}",
+                process_log=[ProcessLogEntry(step="error", status="failed", details=str(e))],
+                robustness_display=None
+            )
+            return error_response, execution_time
+
+    try:
+        # Run all versions in parallel
+        import asyncio as aio
+        v1_task = aio.create_task(run_version("v1"))
+        v2_task = aio.create_task(run_version("v2"))
+        v3_task = aio.create_task(run_version("v3"))
+
+        # Wait for all to complete
+        v1_result, v1_time = await v1_task
+        v2_result, v2_time = await v2_task
+        v3_result, v3_time = await v3_task
+
+        execution_times = {
+            "v1": v1_time,
+            "v2": v2_time,
+            "v3": v3_time
+        }
+
+        # Generate comparison summary
+        xpaths = [v1_result.xpath, v2_result.xpath, v3_result.xpath]
+        all_same = len(set(xpaths)) == 1
+
+        validated_count = sum([
+            1 for result in [v1_result, v2_result, v3_result]
+            if result.validated
+        ])
+
+        fastest_version = min(execution_times.keys(), key=lambda k: execution_times[k])
+        slowest_version = max(execution_times.keys(), key=lambda k: execution_times[k])
+
+        summary = {
+            "all_xpaths_same": all_same,
+            "unique_xpaths": len(set(xpaths)),
+            "validated_count": validated_count,
+            "fastest_version": fastest_version,
+            "slowest_version": slowest_version,
+            "total_time": sum(execution_times.values()),
+            "time_saved_by_parallel": max(execution_times.values()) - max(execution_times.values()) / 3
+        }
+
+        # Add XPath differences analysis
+        if not all_same:
+            summary["xpath_differences"] = {
+                "v1_v2_same": v1_result.xpath == v2_result.xpath,
+                "v1_v3_same": v1_result.xpath == v3_result.xpath,
+                "v2_v3_same": v2_result.xpath == v3_result.xpath,
+            }
+
+        # Add validation differences
+        validations = {
+            "v1": v1_result.validated,
+            "v2": v2_result.validated,
+            "v3": v3_result.validated
+        }
+        summary["validation_agreement"] = len(set(validations.values())) == 1
+
+        return CompareResponse(
+            v1=v1_result,
+            v2=v2_result,
+            v3=v3_result,
+            execution_times=execution_times,
+            summary=summary
+        )
+
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        print(f"Error in compare_versions: {str(e)}")
+        print(traceback.format_exc())
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error comparing versions: {str(e)}"
+        )
 
 @app.post("/api/evaluate", response_model=EvaluateResponse)
 async def evaluate_version(request: EvaluateRequest):

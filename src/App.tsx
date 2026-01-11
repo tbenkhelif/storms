@@ -4,11 +4,19 @@ import { ProcessLog } from './components/ProcessLog'
 import { PagePreview } from './components/PagePreview'
 import { TabNavigation } from './components/TabNavigation'
 import { EvaluationDashboard } from './components/EvaluationDashboard'
+import { ComparisonView } from './components/ComparisonView'
 
 interface ProcessLogEntry {
   step: string
   status: string
   details?: string
+}
+
+interface RobustnessDisplay {
+  icon: string
+  label: string
+  color: string
+  description: string
 }
 
 interface GenerateResponse {
@@ -18,6 +26,24 @@ interface GenerateResponse {
   match_count: number
   element_info: string | null
   process_log?: ProcessLogEntry[]
+  robustness_display?: RobustnessDisplay
+}
+
+interface ComparisonData {
+  v1: GenerateResponse
+  v2: GenerateResponse
+  v3: GenerateResponse
+  execution_times: Record<string, number>
+  summary: {
+    all_xpaths_same: boolean
+    unique_xpaths: number
+    validated_count: number
+    fastest_version: string
+    slowest_version: string
+    total_time: number
+    xpath_differences?: Record<string, boolean>
+    validation_agreement: boolean
+  }
 }
 
 function App() {
@@ -29,36 +55,72 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState<Version>('v1')
+  const [comparisonMode, setComparisonMode] = useState(false)
+  const [comparisonData, setComparisonData] = useState<ComparisonData | null>(null)
+  const [isComparingLoading, setIsComparingLoading] = useState(false)
 
   const handleGenerateXPath = async () => {
-    setIsLoading(true)
-    setError(null)
-    setResult(null)
+    if (comparisonMode) {
+      setIsComparingLoading(true)
+      setError(null)
+      setComparisonData(null)
+      setResult(null)
 
-    try {
-      const response = await fetch('http://localhost:8000/api/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url,
-          instruction,
-          version: selectedVersion
-        }),
-      })
+      try {
+        const response = await fetch('http://localhost:8000/api/compare', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url,
+            instruction
+          }),
+        })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+        }
+
+        const data: ComparisonData = await response.json()
+        setComparisonData(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      } finally {
+        setIsComparingLoading(false)
       }
+    } else {
+      setIsLoading(true)
+      setError(null)
+      setResult(null)
+      setComparisonData(null)
 
-      const data: GenerateResponse = await response.json()
-      setResult(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
-    } finally {
-      setIsLoading(false)
+      try {
+        const response = await fetch('http://localhost:8000/api/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url,
+            instruction,
+            version: selectedVersion
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+        }
+
+        const data: GenerateResponse = await response.json()
+        setResult(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -74,6 +136,7 @@ function App() {
     setUrl('')
     setInstruction('')
     setResult(null)
+    setComparisonData(null)
     setError(null)
   }
 
@@ -108,14 +171,39 @@ function App() {
 
   const validationStatus = getValidationStatus()
   const showProcessLog = result?.process_log && result.process_log.length > 0 && (selectedVersion === 'v2' || selectedVersion === 'v3')
+  const isLoadingAny = isLoading || isComparingLoading
 
   const renderGeneratorTab = () => (
     <div className="flex-1 flex overflow-hidden">
       <div className="w-2/5 bg-white border-r border-gray-200 p-6 flex flex-col space-y-6 overflow-y-auto">
-        <VersionSelector
-          selectedVersion={selectedVersion}
-          onVersionChange={setSelectedVersion}
-        />
+        {/* Comparison Mode Toggle */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-blue-900">Compare All Versions</h3>
+              <p className="text-xs text-blue-700 mt-1">Run V1, V2, and V3 side-by-side</p>
+            </div>
+            <button
+              onClick={() => setComparisonMode(!comparisonMode)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                comparisonMode ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                  comparisonMode ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {!comparisonMode && (
+          <VersionSelector
+            selectedVersion={selectedVersion}
+            onVersionChange={setSelectedVersion}
+          />
+        )}
 
         <div className="space-y-2">
           <label htmlFor="url" className="block text-sm font-medium text-gray-700">
@@ -148,10 +236,14 @@ function App() {
         <div className="flex gap-3">
           <button
             onClick={handleGenerateXPath}
-            disabled={!url || !instruction || isLoading}
+            disabled={!url || !instruction || isLoadingAny}
             className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm"
           >
-            {isLoading ? 'Generating...' : 'Generate XPath'}
+            {isLoadingAny ? (
+              comparisonMode ? 'Comparing...' : 'Generating...'
+            ) : (
+              comparisonMode ? 'Compare All Versions' : 'Generate XPath'
+            )}
           </button>
           <button
             onClick={handleClear}
@@ -169,7 +261,7 @@ function App() {
           </div>
         )}
 
-        {result && validationStatus && (
+        {result && validationStatus && !comparisonMode && (
           <div className={`space-y-3 p-4 rounded-lg border ${validationStatus.bgColor} ${validationStatus.borderColor}`}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-3">
@@ -217,24 +309,60 @@ function App() {
                   <span className="font-medium">Element:</span> {result.element_info}
                 </div>
               )}
+              {result.robustness_display && selectedVersion === 'v3' && (
+                <div className="text-gray-600 flex items-center gap-2">
+                  <span className="font-medium">Robustness:</span>
+                  <span className="text-lg">{result.robustness_display.icon}</span>
+                  <span className={`font-medium ${
+                    result.robustness_display.color === 'green' ? 'text-green-600' :
+                    result.robustness_display.color === 'yellow' ? 'text-yellow-600' :
+                    result.robustness_display.color === 'red' ? 'text-red-600' : 'text-gray-600'
+                  }`}>
+                    {result.robustness_display.label}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {result.robustness_display.description}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {showProcessLog && (
+        {showProcessLog && !comparisonMode && (
           <ProcessLog entries={result.process_log || []} />
+        )}
+
+        {comparisonMode && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Comparison Mode</h3>
+            <p className="text-xs text-gray-500">
+              Results will show side-by-side comparison of V1 (MVP), V2 (Validated), and V3 (Enterprise) approaches with timing and difference analysis.
+            </p>
+          </div>
         )}
       </div>
 
-      <div className="w-3/5 bg-gray-100 p-4">
-        <div className="h-full bg-white rounded-lg shadow-sm overflow-hidden">
-          <PagePreview
-            url={url}
-            xpath={result?.xpath}
-            validated={result?.validated}
-          />
+      {comparisonMode ? (
+        <div className="w-3/5 bg-gray-100 p-4">
+          <div className="h-full bg-white rounded-lg shadow-sm overflow-hidden">
+            <ComparisonView
+              comparisonData={comparisonData}
+              isLoading={isComparingLoading}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="w-3/5 bg-gray-100 p-4">
+          <div className="h-full bg-white rounded-lg shadow-sm overflow-hidden">
+            <PagePreview
+              url={url}
+              xpath={result?.xpath}
+              validated={result?.validated}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 
