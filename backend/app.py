@@ -8,7 +8,8 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from scalar_fastapi import get_scalar_api_reference, Theme
 from dotenv import load_dotenv
 import httpx
 from versions import v1_generate, v2_generate, v3_generate
@@ -21,7 +22,47 @@ if sys.platform == "win32":
 
 load_dotenv()
 
-app = FastAPI()
+# FastAPI app with enhanced metadata for Swagger/OpenAPI
+app = FastAPI(
+    title="Storms XPath Generator API",
+    description="""
+    🌪️ **Storms XPath Generator** - Advanced AI-powered XPath generation with multiple strategies.
+
+    ## Features
+
+    * **Multiple Generation Strategies**: Choose from V1 (MVP), V2 (Validated), or V3 (Adaptive) approaches
+    * **Intelligent Validation**: Real-time XPath validation using Playwright browser automation
+    * **Adaptive Generation**: V3 uses dynamic prompt engineering and intelligent failure recovery
+    * **Robustness Scoring**: Evaluate XPath robustness with detailed analysis
+    * **Cross-Version Comparison**: Compare all strategies side-by-side
+    * **XPath Tools**: Validate syntax and fix common XPath errors
+
+    ## XPath Generation Strategies
+
+    - **V1 (MVP)**: Direct LLM generation with basic validation
+    - **V2 (Validated)**: Heuristic patterns + multi-candidate LLM generation
+    - **V3 (Adaptive)**: Content-aware generation with semantic HTML extraction and intelligent retry
+
+    ## Usage
+
+    1. Use `/api/generate` for single XPath generation
+    2. Use `/api/compare` to compare all three strategies
+    3. Use `/api/validate-xpath` to check XPath syntax
+    4. Use `/api/fix-xpath` to repair broken XPaths
+
+    Built with ❤️ using Claude AI, FastAPI, and Playwright.
+    """,
+    version="1.0.0",
+    contact={
+        "name": "Storms XPath Generator",
+        "url": "https://github.com/storms/xpath-generator",
+    },
+    license_info={
+        "name": "MIT",
+    },
+    docs_url=None,  # Disable default Swagger UI
+    redoc_url=None  # Disable default ReDoc
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,29 +73,46 @@ app.add_middleware(
 )
 
 class GenerateRequest(BaseModel):
-    url: str
-    instruction: str
-    version: Optional[str] = "v1"
+    """Request model for XPath generation"""
+    url: str = Field(
+        ...,
+        description="Target website URL to generate XPath for",
+        example="https://github.com"
+    )
+    instruction: str = Field(
+        ...,
+        description="Human instruction describing the element to target",
+        example="click on about us"
+    )
+    version: Optional[str] = Field(
+        default="v1",
+        description="Generation strategy version",
+        enum=["v1", "v2", "v3"],
+        example="v3"
+    )
 
 class ProcessLogEntry(BaseModel):
-    step: str
-    status: str
-    details: Optional[str] = None
+    """Process log entry for tracking generation steps"""
+    step: str = Field(..., description="Step name", example="xpath_generation")
+    status: str = Field(..., description="Step status", example="success")
+    details: Optional[str] = Field(None, description="Additional step details", example="Generated XPath successfully")
 
 class RobustnessDisplay(BaseModel):
-    icon: str
-    label: str
-    color: str
-    description: str
+    """Visual representation of XPath robustness"""
+    icon: str = Field(..., description="Robustness icon", example="🛡️🛡️🛡️")
+    label: str = Field(..., description="Robustness label", example="Highly Robust")
+    color: str = Field(..., description="Color indicator", example="green")
+    description: str = Field(..., description="Robustness description", example="Score: 85/100")
 
 class GenerateResponse(BaseModel):
-    xpath: str
-    version: str = "v1"
-    validated: bool = False
-    match_count: int = 0
-    element_info: Optional[str] = None
-    process_log: Optional[List[ProcessLogEntry]] = None
-    robustness_display: Optional[RobustnessDisplay] = None
+    """Response model for XPath generation"""
+    xpath: str = Field(..., description="Generated XPath expression", example="//a[contains(text(), 'About')]")
+    version: str = Field(default="v1", description="Generation strategy used", example="v3")
+    validated: bool = Field(default=False, description="Whether XPath was validated on the target page")
+    match_count: int = Field(default=0, description="Number of elements matched by XPath", example=1)
+    element_info: Optional[str] = Field(None, description="Information about matched element", example="<a>: About Us")
+    process_log: Optional[List[ProcessLogEntry]] = Field(None, description="Detailed process log")
+    robustness_display: Optional[RobustnessDisplay] = Field(None, description="Visual robustness indicators")
 
 class EvaluateRequest(BaseModel):
     version: str
@@ -125,7 +183,23 @@ class FixXPathResponse(BaseModel):
 
 @app.post("/api/generate", response_model=GenerateResponse)
 async def generate_xpath(request: GenerateRequest):
-    """Generate XPath using the specified version strategy"""
+    """
+    🎯 **Generate XPath** using the specified strategy version
+
+    Choose from three different generation approaches:
+    - **V1 (MVP)**: Fast direct LLM generation
+    - **V2 (Validated)**: Heuristic patterns + multi-candidate validation
+    - **V3 (Adaptive)**: Intelligent semantic analysis with failure recovery
+
+    **Example Usage:**
+    ```json
+    {
+      "url": "https://github.com",
+      "instruction": "click on about us",
+      "version": "v3"
+    }
+    ```
+    """
     version = request.version or "v1"
 
     try:
@@ -557,3 +631,22 @@ async def fix_xpath_endpoint(request: FixXPathRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fix error: {str(e)}")
+
+@app.get("/docs", response_class=HTMLResponse, include_in_schema=False)
+async def scalar_api_docs():
+    """Scalar API Documentation - automatically generated from OpenAPI spec"""
+    return get_scalar_api_reference(
+        openapi_url=app.openapi_url,
+        title=app.title,
+        show_sidebar=True,
+        hide_download_button=False,
+        default_open_all_tags=True,
+        hidden_clients=["unirest", "java", "go", "ruby"],
+        theme=Theme.PURPLE
+    )
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect to API documentation"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/docs")
