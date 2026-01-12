@@ -1,273 +1,155 @@
 {
   "test_cases": [
+   
     {
-      "id": "simple_001",
-      "category": "simple",
-      "url": "https://the-internet.herokuapp.com/login",
-      "instruction": "Click the 'Login' button",
+      "id": "drag_001",
+      "category": "complex",
+      "url": "https://the-internet.herokuapp.com/drag_and_drop",
+      "instruction": "Drag element A to element B",
       "expected_element": {
-        "tag": "button",
-        "text_contains": "Login"
+        "tag": "div",
+        "attributes": {"id": "column-a"}
       },
       "valid_xpaths": [
-        "//button[@type='submit']",
-        "//button[contains(@class, 'radius')]",
-        "//button[contains(., 'Login')]",
-        "//form[@id='login']//button"
+        "//div[@id='column-a']",
+        "//div[contains(@class, 'column')]//header[text()='A']/..",
+        "//div[@draggable='true'][1]"
       ]
     },
     {
-      "id": "simple_002",
+      "id": "keys_001",
       "category": "simple",
-      "url": "https://the-internet.herokuapp.com/login",
-      "instruction": "Enter username",
+      "url": "https://the-internet.herokuapp.com/key_presses",
+      "instruction": "Type in the input field",
       "expected_element": {
         "tag": "input",
-        "attributes": {"id": "username"}
+        "attributes": {"type": "text"}
       },
       "valid_xpaths": [
-        "//input[@id='username']",
-        "//input[@name='username']",
+        "//input[@type='text']",
+        "//input[@id='target']",
+        "//input"
+      ]
+    },
+    {
+      "id": "context_001",
+      "category": "complex",
+      "url": "https://the-internet.herokuapp.com/context_menu",
+      "instruction": "Right-click on the box area",
+      "expected_element": {
+        "tag": "div",
+        "attributes": {"id": "hot-spot"}
+      },
+      "valid_xpaths": [
+        "//div[@id='hot-spot']",
+        "//div[@oncontextmenu]",
+        "//div[contains(@style, 'border')]"
+      ]
+    },
+    {
+      "id": "input_001",
+      "category": "simple",
+      "url": "https://the-internet.herokuapp.com/inputs",
+      "instruction": "Enter a number in the input field",
+      "expected_element": {
+        "tag": "input",
+        "attributes": {"type": "number"}
+      },
+      "valid_xpaths": [
+        "//input[@type='number']",
+        "//input",
+        "//div[@class='example']//input"
+      ]
+    },
+    {
+      "id": "forgot_001",
+      "category": "simple",
+      "url": "https://the-internet.herokuapp.com/forgot_password",
+      "instruction": "Enter email address",
+      "expected_element": {
+        "tag": "input",
+        "attributes": {"id": "email"}
+      },
+      "valid_xpaths": [
+        "//input[@id='email']",
+        "//input[@name='email']",
         "//input[@type='text']"
       ]
     },
     {
-      "id": "simple_003",
+      "id": "forgot_002",
       "category": "simple",
-      "url": "https://the-internet.herokuapp.com/checkboxes",
-      "instruction": "Check the first checkbox",
-      "expected_element": {
-        "tag": "input",
-        "attributes": {"type": "checkbox"}
-      },
-      "valid_xpaths": [
-        "//input[@type='checkbox'][1]",
-        "(//input[@type='checkbox'])[1]",
-        "//form[@id='checkboxes']/input[1]"
-      ]
-    },
-    {
-      "id": "simple_004",
-      "category": "simple",
-      "url": "https://the-internet.herokuapp.com/dropdown",
-      "instruction": "Select the dropdown",
-      "expected_element": {
-        "tag": "select",
-        "attributes": {"id": "dropdown"}
-      },
-      "valid_xpaths": [
-        "//select[@id='dropdown']",
-        "//select",
-        "//div[@id='content']//select"
-      ]
-    },
-    {
-      "id": "simple_005",
-      "category": "simple",
-      "url": "https://the-internet.herokuapp.com/add_remove_elements/",
-      "instruction": "Click 'Add Element' button",
+      "url": "https://the-internet.herokuapp.com/forgot_password",
+      "instruction": "Click the retrieve password button",
       "expected_element": {
         "tag": "button",
-        "text_contains": "Add Element"
+        "text_contains": "Retrieve"
       },
       "valid_xpaths": [
-        "//button[text()='Add Element']",
-        "//button[@onclick='addElement()']",
-        "//button[contains(text(), 'Add')]"
+        "//button[@type='submit']",
+        "//button[contains(text(), 'Retrieve')]",
+        "//button[@id='form_submit']",
+        "//i[contains(@class, 'icon-signin')]/.."
       ]
     },
     {
-      "id": "contextual_001",
-      "category": "contextual",
-      "url": "https://the-internet.herokuapp.com/tables",
-      "instruction": "Click 'edit' for the user with email 'jsmith@gmail.com'",
-      "expected_element": {
-        "tag": "a",
-        "text_contains": "edit"
-      },
-      "valid_xpaths": [
-        "//td[text()='jsmith@gmail.com']/following-sibling::td//a[text()='edit']",
-        "//tr[td[text()='jsmith@gmail.com']]//a[text()='edit']",
-        "//table[@id='table1']//tr[2]//a[text()='edit']"
-      ]
-    },
-    {
-      "id": "contextual_002",
-      "category": "contextual",
-      "url": "https://the-internet.herokuapp.com/tables",
-      "instruction": "Find the last name cell for user Frank",
-      "expected_element": {
-        "tag": "td",
-        "text_contains": "Bach"
-      },
-      "valid_xpaths": [
-        "//td[text()='Frank']/following-sibling::td[1]",
-        "//tr[td[text()='Frank']]/td[2]",
-        "//td[text()='Bach']"
-      ]
-    },
-    {
-      "id": "contextual_003",
-      "category": "contextual",
-      "url": "https://the-internet.herokuapp.com/nested_frames",
-      "instruction": "Navigate to 'Frame Top' link",
-      "expected_element": {
-        "tag": "frame",
-        "attributes": {"name": "frame-top"}
-      },
-      "valid_xpaths": [
-        "//frame[@name='frame-top']",
-        "//frameset/frame[1]",
-        "//frame[@src='/frame_top']"
-      ]
-    },
-    {
-      "id": "contextual_004",
-      "category": "contextual",
-      "url": "https://the-internet.herokuapp.com/dynamic_content",
-      "instruction": "Click the image in the third row",
-      "expected_element": {
-        "tag": "img"
-      },
-      "valid_xpaths": [
-        "(//div[@class='large-2 columns']//img)[3]",
-        "//div[@id='content']//div[@class='row'][3]//img",
-        "(//img)[3]"
-      ]
-    },
-    {
-      "id": "contextual_005",
-      "category": "contextual",
-      "url": "https://the-internet.herokuapp.com/disappearing_elements",
-      "instruction": "Click the 'Home' link in navigation",
-      "expected_element": {
-        "tag": "a",
-        "text_contains": "Home"
-      },
-      "valid_xpaths": [
-        "//a[text()='Home']",
-        "//li/a[text()='Home']",
-        "//ul//a[@href='/']"
-      ]
-    },
-    {
-      "id": "ambiguous_001",
-      "category": "ambiguous",
-      "url": "https://the-internet.herokuapp.com/tables",
-      "instruction": "Click the second 'delete' link",
-      "expected_element": {
-        "tag": "a",
-        "text_contains": "delete"
-      },
-      "valid_xpaths": [
-        "(//a[text()='delete'])[2]",
-        "//table[@id='table1']//tr[3]//a[text()='delete']",
-        "//td[text()='fbach@yahoo.com']/following-sibling::td//a[text()='delete']"
-      ]
-    },
-    {
-      "id": "ambiguous_002",
-      "category": "ambiguous",
-      "url": "https://the-internet.herokuapp.com/checkboxes",
-      "instruction": "Check the unchecked checkbox",
+      "id": "upload_001",
+      "category": "complex",
+      "url": "https://the-internet.herokuapp.com/upload",
+      "instruction": "Select a file to upload",
       "expected_element": {
         "tag": "input",
-        "attributes": {"type": "checkbox"}
+        "attributes": {"type": "file"}
       },
       "valid_xpaths": [
-        "//input[@type='checkbox' and not(@checked)]",
-        "//input[@type='checkbox'][1]",
-        "(//input[@type='checkbox'])[position()=1]"
+        "//input[@type='file']",
+        "//input[@id='file-upload']",
+        "//input[@name='file']"
       ]
     },
     {
-      "id": "ambiguous_003",
-      "category": "ambiguous",
-      "url": "https://the-internet.herokuapp.com/challenging_dom",
-      "instruction": "Click the blue button",
-      "expected_element": {
-        "tag": "a",
-        "attributes": {"class": "button"}
-      },
-      "valid_xpaths": [
-        "//a[@class='button']",
-        "(//a[contains(@class, 'button')])[1]",
-        "//div[@class='large-2 columns']/a[1]"
-      ]
-    },
-    {
-      "id": "ambiguous_004",
-      "category": "ambiguous",
-      "url": "https://the-internet.herokuapp.com/tables",
-      "instruction": "Find the cell with highest due amount",
-      "expected_element": {
-        "tag": "td",
-        "text_contains": "$100.00"
-      },
-      "valid_xpaths": [
-        "//td[text()='$100.00']",
-        "(//td[@class='dues'])[1]",
-        "//tr[@class='odd'][1]/td[@class='dues']"
-      ]
-    },
-    {
-      "id": "ambiguous_005",
-      "category": "ambiguous",
-      "url": "https://the-internet.herokuapp.com/dynamic_controls",
-      "instruction": "Click the button next to the checkbox",
-      "expected_element": {
-        "tag": "button",
-        "text_contains": "Remove"
-      },
-      "valid_xpaths": [
-        "//button[text()='Remove']",
-        "//form[@id='checkbox-example']/button",
-        "//div[@id='checkbox-example']//button"
-      ]
-    },
-    {
-      "id": "complex_001",
-      "category": "complex",
-      "url": "https://the-internet.herokuapp.com/javascript_alerts",
-      "instruction": "Click button that triggers JavaScript confirm dialog",
-      "expected_element": {
-        "tag": "button",
-        "text_contains": "Click for JS Confirm"
-      },
-      "valid_xpaths": [
-        "//button[text()='Click for JS Confirm']",
-        "//button[@onclick='jsConfirm()']",
-        "(//button)[2]"
-      ]
-    },
-    {
-      "id": "complex_002",
-      "category": "complex",
-      "url": "https://the-internet.herokuapp.com/hovers",
-      "instruction": "Hover over the first user profile image",
-      "expected_element": {
-        "tag": "img",
-        "attributes": {"alt": "User Avatar"}
-      },
-      "valid_xpaths": [
-        "(//img[@alt='User Avatar'])[1]",
-        "//div[@class='figure'][1]//img",
-        "(//div[@class='figure']//img)[1]"
-      ]
-    },
-    {
-      "id": "complex_003",
-      "category": "complex",
-      "url": "https://the-internet.herokuapp.com/horizontal_slider",
-      "instruction": "Select the slider input",
+      "id": "upload_002",
+      "category": "simple",
+      "url": "https://the-internet.herokuapp.com/upload",
+      "instruction": "Click the upload button",
       "expected_element": {
         "tag": "input",
-        "attributes": {"type": "range"}
+        "attributes": {"type": "submit"}
       },
       "valid_xpaths": [
-        "//input[@type='range']",
-        "//div[@class='sliderContainer']//input",
-        "//input"
+        "//input[@type='submit']",
+        "//input[@id='file-submit']",
+        "//input[@value='Upload']"
+      ]
+    },
+    {
+      "id": "float_001",
+      "category": "contextual",
+      "url": "https://the-internet.herokuapp.com/floating_menu",
+      "instruction": "Click the 'News' link in the floating menu",
+      "expected_element": {
+        "tag": "a",
+        "text_contains": "News"
+      },
+      "valid_xpaths": [
+        "//a[text()='News']",
+        "//div[@id='menu']//a[@href='#news']",
+        "//li/a[text()='News']"
+      ]
+    },
+    {
+      "id": "notif_001",
+      "category": "contextual",
+      "url": "https://the-internet.herokuapp.com/notification_message_rendered",
+      "instruction": "Click the link to load a new message",
+      "expected_element": {
+        "tag": "a",
+        "text_contains": "Click here"
+      },
+      "valid_xpaths": [
+        "//a[contains(text(), 'Click here')]",
+        "//a[@href='/notification_message']",
+        "//div[@class='example']//a"
       ]
     }
   ]

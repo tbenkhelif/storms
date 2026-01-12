@@ -28,6 +28,7 @@ class EvaluationResult:
     match_count: int
     element_info: Optional[str]
     success: bool
+    xpath_correct: bool  # Whether XPath matches expected or finds correct element
     error_message: Optional[str]
     execution_time: float
     process_log: Optional[List[Dict]] = None
@@ -37,14 +38,18 @@ class XPathEvaluator:
         self.backend_url = backend_url
         self.results: List[EvaluationResult] = []
 
-    async def run_evaluation(self, versions: List[str] = None, test_categories: List[str] = None) -> Dict[str, Any]:
+    async def run_evaluation(self, versions: List[str] = None, test_categories: List[str] = None, test_file: str = None) -> Dict[str, Any]:
         """Run evaluation against specified versions and categories"""
 
         if versions is None:
-            versions = ["v1", "v2"]  # Skip v3 as it's not implemented yet
+            versions = ["v1", "v2", "v3"]
 
         # Load test cases
-        test_cases_path = Path(__file__).parent / "test_cases.json"
+        if test_file:
+            test_cases_path = Path(test_file)
+        else:
+            test_cases_path = Path(__file__).parent / "test_cases.json"
+
         with open(test_cases_path, 'r') as f:
             test_data = json.load(f)
 
@@ -107,10 +112,12 @@ class XPathEvaluator:
             success_rate = sum(1 for r in version_results if r.success) / len(version_results) * 100
             avg_time = sum(r.execution_time for r in version_results) / len(version_results)
             valid_xpaths = sum(1 for r in version_results if r.validated and r.match_count > 0)
+            correct_xpaths = sum(1 for r in version_results if r.xpath_correct)
 
             print(f"\n🔧 {version.upper()}")
             print(f"   Success Rate: {success_rate:.1f}% ({sum(1 for r in version_results if r.success)}/{len(version_results)})")
-            print(f"   Valid XPaths: {valid_xpaths}/{len(version_results)} ({valid_xpaths/len(version_results)*100:.1f}%)")
+            print(f"   Found Elements: {valid_xpaths}/{len(version_results)} ({valid_xpaths/len(version_results)*100:.1f}%)")
+            print(f"   Correct XPaths: {correct_xpaths}/{len(version_results)} ({correct_xpaths/len(version_results)*100:.1f}%)")
             print(f"   Avg Time: {avg_time:.2f}s")
 
         # Category breakdown
@@ -145,13 +152,16 @@ class XPathEvaluator:
             if response.status_code == 200:
                 data = response.json()
 
-                # Check if generated XPath matches any of the valid patterns
                 generated_xpath = data.get("xpath", "")
-                valid_xpaths = test_case.get("valid_xpaths", [])
-                xpath_matches_expected = any(
-                    self._xpath_similarity(generated_xpath, valid_xpath) > 0.7
-                    for valid_xpath in valid_xpaths
-                )
+                element_info = data.get("element_info")
+                validated = data.get("validated", False)
+                match_count = data.get("match_count", 0)
+
+                # Check correctness: XPath matches expected OR element matches expected
+                xpath_correct = self._check_xpath_correctness(generated_xpath, test_case, element_info)
+
+                # Success = validated AND found element(s) AND correct element
+                success = validated and match_count > 0 and xpath_correct
 
                 return EvaluationResult(
                     test_id=test_case["id"],
@@ -160,10 +170,11 @@ class XPathEvaluator:
                     instruction=test_case["instruction"],
                     version=version,
                     generated_xpath=generated_xpath,
-                    validated=data.get("validated", False),
-                    match_count=data.get("match_count", 0),
-                    element_info=data.get("element_info"),
-                    success=data.get("validated", False) and data.get("match_count", 0) > 0,
+                    validated=validated,
+                    match_count=match_count,
+                    element_info=element_info,
+                    success=success,
+                    xpath_correct=xpath_correct,
                     error_message=None,
                     execution_time=execution_time,
                     process_log=data.get("process_log")
@@ -183,6 +194,7 @@ class XPathEvaluator:
                     match_count=0,
                     element_info=None,
                     success=False,
+                    xpath_correct=False,
                     error_message=error_detail,
                     execution_time=time.time() - start_time
                 )
@@ -199,6 +211,7 @@ class XPathEvaluator:
                 match_count=0,
                 element_info=None,
                 success=False,
+                xpath_correct=False,
                 error_message=str(e),
                 execution_time=time.time() - start_time
             )
@@ -220,6 +233,55 @@ class XPathEvaluator:
 
         return common / total if total > 0 else 0.0
 
+    def _check_xpath_correctness(self, generated_xpath: str, test_case: Dict[str, Any], element_info: Optional[str]) -> bool:
+        """Check if generated XPath is correct based on valid_xpaths or expected_element"""
+        if not generated_xpath:
+            return False
+
+        # Method 1: Check against list of valid XPaths
+        valid_xpaths = test_case.get("valid_xpaths", [])
+
+        # Exact match
+        if generated_xpath in valid_xpaths:
+            return True
+
+        # Normalized comparison (strip whitespace, handle quotes)
+        normalized_generated = generated_xpath.strip().replace('"', "'")
+        for valid_xpath in valid_xpaths:
+            normalized_valid = valid_xpath.strip().replace('"', "'")
+            if normalized_generated == normalized_valid:
+                return True
+            # Check similarity threshold
+            if self._xpath_similarity(normalized_generated, normalized_valid) > 0.8:
+                return True
+
+        # Method 2: Check if element_info matches expected_element
+        expected_element = test_case.get("expected_element", {})
+        if element_info and expected_element:
+            # Check tag
+            expected_tag = expected_element.get("tag", "").lower()
+            if expected_tag and f"<{expected_tag}" in element_info.lower():
+                # Check text_contains if specified
+                text_contains = expected_element.get("text_contains", "")
+                if text_contains:
+                    if text_contains.lower() in element_info.lower():
+                        return True
+                else:
+                    # Tag matches and no text requirement
+                    return True
+
+                # Check attributes if specified
+                expected_attrs = expected_element.get("attributes", {})
+                if expected_attrs:
+                    attrs_match = all(
+                        f'{key}=' in element_info or f'{key}\"' in element_info or val.lower() in element_info.lower()
+                        for key, val in expected_attrs.items()
+                    )
+                    if attrs_match:
+                        return True
+
+        return False
+
     def _generate_summary(self) -> Dict[str, Any]:
         """Generate evaluation summary"""
         summary = {
@@ -238,7 +300,8 @@ class XPathEvaluator:
                 "successful": sum(1 for r in version_results if r.success),
                 "success_rate": sum(1 for r in version_results if r.success) / len(version_results),
                 "average_time": sum(r.execution_time for r in version_results) / len(version_results),
-                "validated_xpaths": sum(1 for r in version_results if r.validated and r.match_count > 0)
+                "validated_xpaths": sum(1 for r in version_results if r.validated and r.match_count > 0),
+                "correct_xpaths": sum(1 for r in version_results if r.xpath_correct)
             }
 
         # Category-wise summary
@@ -272,10 +335,12 @@ async def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Run Storms XPath generator evaluation")
-    parser.add_argument("--versions", nargs="+", default=["v1", "v2"],
-                       help="Versions to test (default: v1 v2)")
+    parser.add_argument("--versions", nargs="+", default=["v1", "v2", "v3"],
+                       help="Versions to test (default: v1 v2 v3)")
     parser.add_argument("--categories", nargs="+",
                        help="Test categories to run (default: all)")
+    parser.add_argument("--test-file", type=str,
+                       help="Path to test cases JSON file (default: test_cases.json)")
     parser.add_argument("--output", type=str,
                        help="Output filename for results")
     parser.add_argument("--backend", type=str, default="http://localhost:8000",
@@ -288,7 +353,8 @@ async def main():
     try:
         summary = await evaluator.run_evaluation(
             versions=args.versions,
-            test_categories=args.categories
+            test_categories=args.categories,
+            test_file=args.test_file
         )
 
         if "error" not in summary:

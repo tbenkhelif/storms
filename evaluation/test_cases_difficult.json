@@ -1,0 +1,95 @@
+{
+  "description": "Difficult test cases inspired by PhraseNode dataset - natural language with ordinal, relational, and implicit references",
+  "source": "phrasenode-style",
+  "test_cases": [
+    {
+      "id": "pn_001",
+      "category": "ordinal",
+      "difficulty": "hard",
+      "url": "https://the-internet.herokuapp.com/tables",
+      "instruction": "find the email of the person in the third row",
+      "reasoning": "Requires ordinal reasoning (third row) and understanding table structure",
+      "expected_element": {
+        "tag": "td",
+        "text_contains": "fbach@yahoo.com"
+      },
+      "valid_xpaths": [
+        "//table[@id='table1']//tbody/tr[3]/td[3]",
+        "(//table[@id='table1']//tr)[4]/td[3]",
+        "//tr[td[text()='Frank']]/td[contains(text(), '@')]",
+        "//td[text()='fbach@yahoo.com']"
+      ]
+    },
+    {
+      "id": "pn_002",
+      "category": "relational",
+      "difficulty": "hard",
+      "url": "https://the-internet.herokuapp.com/tables",
+      "instruction": "delete the entry for the person who owes fifty dollars",
+      "reasoning": "Requires relational reasoning - find delete action associated with $50.00 due amount",
+      "expected_element": {
+        "tag": "a",
+        "text_contains": "delete"
+      },
+      "valid_xpaths": [
+        "//tr[td[text()='$50.00']]//a[text()='delete']",
+        "//td[text()='$50.00']/following-sibling::td//a[text()='delete']",
+        "//tr[contains(., '$50.00')]//a[contains(text(), 'delete')]"
+      ]
+    },
+    {
+      "id": "pn_003",
+      "category": "implicit",
+      "difficulty": "hard",
+      "url": "https://the-internet.herokuapp.com/login",
+      "instruction": "sign in to the account",
+      "reasoning": "Implicit reference to login button - no explicit mention of 'button' or 'click'",
+      "expected_element": {
+        "tag": "button",
+        "text_contains": "Login"
+      },
+      "valid_xpaths": [
+        "//button[@type='submit']",
+        "//button[contains(., 'Login')]",
+        "//form[@id='login']//button",
+        "//button[contains(@class, 'radius')]"
+      ]
+    },
+    {
+      "id": "pn_004",
+      "category": "spatial",
+      "difficulty": "hard",
+      "url": "https://the-internet.herokuapp.com/challenging_dom",
+      "instruction": "click the rightmost button in the button row",
+      "reasoning": "Spatial reasoning - rightmost implies last in visual order",
+      "expected_element": {
+        "tag": "a",
+        "attributes": {"class": "button alert"}
+      },
+      "valid_xpaths": [
+        "(//a[contains(@class, 'button')])[last()]",
+        "(//a[contains(@class, 'button')])[3]",
+        "//a[contains(@class, 'button alert')]",
+        "//div[@class='large-2 columns']/a[3]"
+      ]
+    },
+    {
+      "id": "pn_005",
+      "category": "functional",
+      "difficulty": "hard",
+      "url": "https://the-internet.herokuapp.com/dynamic_controls",
+      "instruction": "make the text field editable",
+      "reasoning": "Functional reference - requires understanding that 'Enable' button controls the input field state",
+      "expected_element": {
+        "tag": "button",
+        "text_contains": "Enable"
+      },
+      "valid_xpaths": [
+        "//button[text()='Enable']",
+        "//form[@id='input-example']//button",
+        "//button[contains(text(), 'Enable')]",
+        "//input[@type='text']/following-sibling::button"
+      ]
+    }
+  ]
+}

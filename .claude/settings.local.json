@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:demo.playwright.dev)",
+      "WebFetch(domain:the-internet.herokuapp.com)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

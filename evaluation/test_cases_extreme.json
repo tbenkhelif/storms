@@ -1,0 +1,259 @@
+{
+  "description": "Extremely difficult test cases - highly ambiguous, implicit, multi-step reasoning required",
+  "source": "phrasenode-extreme",
+  "difficulty_level": "extreme",
+  "test_cases": [
+    {
+      "id": "ext_001",
+      "category": "implicit_action",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/login",
+      "instruction": "authenticate with the system",
+      "reasoning": "No mention of button, click, login, or any UI element - purely functional intent",
+      "expected_element": {
+        "tag": "button",
+        "text_contains": "Login"
+      },
+      "valid_xpaths": [
+        "//button[@type='submit']",
+        "//button[contains(., 'Login')]",
+        "//form[@id='login']//button"
+      ]
+    },
+    {
+      "id": "ext_002",
+      "category": "negation",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/checkboxes",
+      "instruction": "select the one that isn't already selected",
+      "reasoning": "Requires understanding negation and current state of checkboxes",
+      "expected_element": {
+        "tag": "input",
+        "attributes": {"type": "checkbox"}
+      },
+      "valid_xpaths": [
+        "//input[@type='checkbox' and not(@checked)]",
+        "//input[@type='checkbox'][not(@checked)]",
+        "(//input[@type='checkbox'])[1]"
+      ]
+    },
+    {
+      "id": "ext_003",
+      "category": "superlative",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/tables",
+      "instruction": "find who pays the most",
+      "reasoning": "Requires understanding 'pays most' = highest due amount, finding associated name",
+      "expected_element": {
+        "tag": "td",
+        "text_contains": "$100.00"
+      },
+      "valid_xpaths": [
+        "//td[text()='$100.00']",
+        "//tr[td[text()='$100.00']]/td[1]",
+        "(//td[@class='dues'])[1]"
+      ]
+    },
+    {
+      "id": "ext_004",
+      "category": "relative_position",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/tables",
+      "instruction": "the action next to jdoe's website",
+      "reasoning": "Multi-hop: find jdoe → find website column → find adjacent action",
+      "expected_element": {
+        "tag": "a",
+        "text_contains": "edit"
+      },
+      "valid_xpaths": [
+        "//td[text()='jdoe@hotmail.com']/..//a[text()='edit']",
+        "//tr[td[contains(text(), 'jdoe')]]//a[1]",
+        "//td[contains(., 'jdoe')]/following-sibling::td//a[text()='edit']"
+      ]
+    },
+    {
+      "id": "ext_005",
+      "category": "counting",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/challenging_dom",
+      "instruction": "the middle option",
+      "reasoning": "Requires counting elements and finding the middle one (2nd of 3 buttons)",
+      "expected_element": {
+        "tag": "a",
+        "attributes": {"class": "button"}
+      },
+      "valid_xpaths": [
+        "(//a[contains(@class, 'button')])[2]",
+        "//a[@class='button success']",
+        "//div[@class='large-2 columns']/a[2]"
+      ]
+    },
+    {
+      "id": "ext_006",
+      "category": "synonym",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/add_remove_elements/",
+      "instruction": "create another one",
+      "reasoning": "Synonym mapping: 'create another' = 'Add Element' button",
+      "expected_element": {
+        "tag": "button",
+        "text_contains": "Add Element"
+      },
+      "valid_xpaths": [
+        "//button[text()='Add Element']",
+        "//button[@onclick='addElement()']",
+        "//div[@class='example']/button"
+      ]
+    },
+    {
+      "id": "ext_007",
+      "category": "implicit_form",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/forgot_password",
+      "instruction": "where do I put my contact info",
+      "reasoning": "Implicit reference to email input field through 'contact info'",
+      "expected_element": {
+        "tag": "input",
+        "attributes": {"id": "email"}
+      },
+      "valid_xpaths": [
+        "//input[@id='email']",
+        "//input[@name='email']",
+        "//input[@type='text']"
+      ]
+    },
+    {
+      "id": "ext_008",
+      "category": "last_position",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/disappearing_elements",
+      "instruction": "the final navigation item",
+      "reasoning": "Requires understanding 'final' = last in the navigation list",
+      "expected_element": {
+        "tag": "a"
+      },
+      "valid_xpaths": [
+        "(//ul/li/a)[last()]",
+        "//li[last()]/a",
+        "(//a[parent::li])[last()]"
+      ]
+    },
+    {
+      "id": "ext_009",
+      "category": "visual_description",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/challenging_dom",
+      "instruction": "the red warning one",
+      "reasoning": "Visual reasoning: 'red warning' = button with 'alert' class (typically styled red)",
+      "expected_element": {
+        "tag": "a",
+        "attributes": {"class": "button alert"}
+      },
+      "valid_xpaths": [
+        "//a[contains(@class, 'alert')]",
+        "//a[contains(@class, 'button alert')]",
+        "(//a[contains(@class, 'button')])[3]"
+      ]
+    },
+    {
+      "id": "ext_010",
+      "category": "action_object",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/dynamic_controls",
+      "instruction": "get rid of it",
+      "reasoning": "Vague reference 'it' + action 'get rid of' = Remove button for checkbox",
+      "expected_element": {
+        "tag": "button",
+        "text_contains": "Remove"
+      },
+      "valid_xpaths": [
+        "//button[text()='Remove']",
+        "//form[@id='checkbox-example']//button",
+        "//button[contains(text(), 'Remove')]"
+      ]
+    },
+    {
+      "id": "ext_011",
+      "category": "ordinal_from_end",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/tables",
+      "instruction": "second to last person's details",
+      "reasoning": "Ordinal from end: second to last row in table",
+      "expected_element": {
+        "tag": "tr"
+      },
+      "valid_xpaths": [
+        "(//table[@id='table1']//tbody/tr)[last()-1]",
+        "//table[@id='table1']//tbody/tr[3]",
+        "(//tbody/tr)[position()=last()-1]"
+      ]
+    },
+    {
+      "id": "ext_012",
+      "category": "compound_condition",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/tables",
+      "instruction": "modify the bach family member's record",
+      "reasoning": "Compound: find 'Bach' surname → find edit action in same row",
+      "expected_element": {
+        "tag": "a",
+        "text_contains": "edit"
+      },
+      "valid_xpaths": [
+        "//tr[td[text()='Bach']]//a[text()='edit']",
+        "//td[text()='Bach']/..//a[text()='edit']",
+        "//td[text()='Bach']/following-sibling::td//a[text()='edit']"
+      ]
+    },
+    {
+      "id": "ext_013",
+      "category": "state_dependent",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/dynamic_controls",
+      "instruction": "toggle the input availability",
+      "reasoning": "State-dependent: could be Enable or Disable depending on current state",
+      "expected_element": {
+        "tag": "button"
+      },
+      "valid_xpaths": [
+        "//form[@id='input-example']//button",
+        "//button[text()='Enable' or text()='Disable']",
+        "//input[@type='text']/following-sibling::button"
+      ]
+    },
+    {
+      "id": "ext_014",
+      "category": "domain_knowledge",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/login",
+      "instruction": "the secret phrase field",
+      "reasoning": "Domain knowledge: 'secret phrase' = password field",
+      "expected_element": {
+        "tag": "input",
+        "attributes": {"type": "password"}
+      },
+      "valid_xpaths": [
+        "//input[@type='password']",
+        "//input[@id='password']",
+        "//input[@name='password']"
+      ]
+    },
+    {
+      "id": "ext_015",
+      "category": "multi_step_inference",
+      "difficulty": "extreme",
+      "url": "https://the-internet.herokuapp.com/hovers",
+      "instruction": "see more about the guy in the center",
+      "reasoning": "Multi-step: center = 2nd of 3 profiles → hover state → 'View profile' link",
+      "expected_element": {
+        "tag": "a",
+        "text_contains": "View profile"
+      },
+      "valid_xpaths": [
+        "(//div[@class='figcaption']//a)[2]",
+        "(//a[contains(@href, '/users/')])[2]",
+        "//div[@class='figure'][2]//a[contains(text(), 'View profile')]"
+      ]
+    }
+  ]
+}
