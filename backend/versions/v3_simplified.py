@@ -43,7 +43,9 @@ def extract_relevant_html(soup: BeautifulSoup, instruction: str, expanded_mode: 
     relevant_selectors = [
         'input', 'button', 'a', 'select', 'textarea',
         '[role="button"]', '[role="link"]', '[role="textbox"]',
-        '[onclick]', '[type="submit"]', '[type="button"]'
+        '[onclick]', '[type="submit"]', '[type="button"]',
+        # Table elements for data queries
+        'table', 'th'
     ]
 
     # Always include navigation context - no specific rules
@@ -69,6 +71,17 @@ def extract_relevant_html(soup: BeautifulSoup, instruction: str, expanded_mode: 
 
     elements = []
     seen_elements = set()  # Avoid duplicates
+    table_rows = []  # Store table rows separately for context
+
+    # Extract table rows with full context (important for data queries)
+    tables = soup.select('table')
+    for table in tables[:3]:  # Limit to 3 tables
+        rows = table.select('tr')
+        for row in rows[:20]:  # Limit rows per table
+            row_key = row.get_text(strip=True)[:50]
+            if row_key and row_key not in seen_elements:
+                seen_elements.add(row_key)
+                table_rows.append(row)
 
     # First, get elements from semantic sections if specified
     for selector in semantic_selectors:
@@ -101,6 +114,25 @@ def extract_relevant_html(soup: BeautifulSoup, instruction: str, expanded_mode: 
     # Build simplified HTML representation
     simplified_lines = []
     total_limit = 150 if expanded_mode else 100  # More elements in expanded mode
+
+    # First, add table rows with structure preserved (critical for data queries)
+    if table_rows:
+        simplified_lines.append("<!-- TABLE DATA -->")
+        for row in table_rows[:30]:  # Limit table rows
+            cells = row.select('td, th')
+            if cells:
+                cell_texts = []
+                for cell in cells:
+                    cell_text = cell.get_text(strip=True)[:40]
+                    cell_texts.append(cell_text)
+                # Include links within the row
+                links = row.select('a')
+                link_info = ', '.join([f"<a>{a.get_text(strip=True)}</a>" for a in links[:4]])
+                row_repr = f"<tr>{'|'.join(cell_texts)}</tr>"
+                if link_info:
+                    row_repr += f" Actions: {link_info}"
+                simplified_lines.append(row_repr)
+        simplified_lines.append("<!-- END TABLE DATA -->")
 
     for elem in elements[:total_limit]:
         # Extract key attributes
@@ -210,6 +242,32 @@ def extract_content_terms(instruction: str) -> List[str]:
             content_terms.append(phrase.strip().lower())
 
     return list(set(content_terms))  # Remove duplicates
+
+
+async def analyze_intent(instruction: str) -> str:
+    """Quick intent analysis to identify target element type"""
+
+    if not client:
+        return ""
+
+    try:
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            messages=[{"role": "user", "content": f"""Briefly analyze this web interaction instruction:
+"{instruction}"
+
+In exactly 3 short lines, state:
+1. TARGET TYPE: (button/link/input/table-cell/checkbox/etc)
+2. ACTION: (click/fill/read/select/etc)
+3. KEY IDENTIFIER: (text content, attribute, or position to look for)"""}],
+            max_tokens=80,
+            temperature=0
+        )
+
+        intent_text = response.content[0].text if response.content else ""
+        return intent_text.strip()
+    except:
+        return ""
 
 
 async def enrich_instruction_with_llm(instruction: str) -> Dict[str, Any]:
@@ -361,18 +419,37 @@ async def quick_refine_xpath(xpath: str, instruction: str, page) -> str:
     return best_xpath
 
 
-def generate_adaptive_prompt(instruction: str, attempt_number: int = 1, enrichment_data: Dict = None) -> Tuple[str, str]:
+def generate_adaptive_prompt(instruction: str, attempt_number: int = 1, enrichment_data: Dict = None, intent_summary: str = None) -> Tuple[str, str]:
     """Generate clean system and user prompts with optional LLM enrichment context"""
 
-    # Simple, generic system prompt
+    # Enhanced system prompt with intent understanding
     system_prompt = """You are an XPath expert. Generate a robust XPath selector based on the HTML structure provided.
 
+CRITICAL - Understand user intent before generating:
+
+1. ACTION WORDS imply interactive elements (buttons, not input fields):
+   - "authenticate", "login", "submit", "sign in", "log in" → find submit buttons
+   - "toggle", "enable", "disable", "switch", "turn on/off" → find buttons that control state
+   - "delete", "remove", "edit", "modify", "update" → find action links/buttons
+   - "create", "add", "new" → find buttons that create/add items
+
+2. SUPERLATIVE/COMPARATIVE words require finding data values:
+   - "most", "highest", "maximum", "largest" → find the cell with max value
+   - "least", "lowest", "minimum", "smallest" → find the cell with min value
+   - "first", "last", "middle", "second" → use positional selectors
+
+3. RELATIONAL words need context traversal:
+   - "next to", "beside", "associated with", "for [X]" → traverse to related elements
+   - Find the context entity first, then navigate to the target
+
+4. For TABLES: Use proper row/cell traversal:
+   - //tr[contains(., 'value')]//td or //tr[td[text()='value']]//a
+
 Rules:
-1. Prefer semantic attributes in this order: @id, @name, @aria-label, @role, @type
-2. Use text content when it's unique and stable
-3. Avoid position-based selectors like [1] or [2]
-4. Keep it simple and readable
-5. Return ONLY the XPath expression, nothing else"""
+1. Prefer semantic attributes: @id > @name > @aria-label > @role > @type
+2. Use text content when unique and stable
+3. Avoid generic selectors that match too many elements
+4. Return ONLY the XPath expression, nothing else"""
 
     # Add enrichment context if available
     if attempt_number > 1 and enrichment_data and enrichment_data.get("enriched"):
@@ -398,7 +475,12 @@ RETRY ATTEMPT #{attempt_number}: The previous attempt failed validation.
     else:
         user_prompt_prefix = ""
 
-    user_prompt = f"{user_prompt_prefix}Task: {instruction}\nURL: {{url}}\n\nRelevant HTML elements:\n{{html}}\n\nGenerate the XPath:"
+    # Include intent analysis if available
+    intent_section = ""
+    if intent_summary:
+        intent_section = f"Intent Analysis:\n{intent_summary}\n\n"
+
+    user_prompt = f"{user_prompt_prefix}{intent_section}Task: {instruction}\nURL: {{url}}\n\nRelevant HTML elements:\n{{html}}\n\nGenerate the XPath:"
 
     return system_prompt, user_prompt
 
@@ -451,6 +533,14 @@ async def v3_generate(url: str, instruction: str) -> Dict[str, Any]:
             generated_xpath = None
             enrichment_data = None
 
+            # Pre-analyze intent for better XPath generation
+            log_step("intent_analysis", "running", "Analyzing user intent")
+            intent_summary = await analyze_intent(instruction)
+            if intent_summary:
+                log_step("intent_analysis", "success", f"Intent: {intent_summary[:100]}")
+            else:
+                log_step("intent_analysis", "skipped", "No intent analysis available")
+
             for attempt in range(1, 3):  # Maximum 2 attempts
                 # On retry, use LLM enrichment to understand what we're really looking for
                 if attempt > 1 and not enrichment_data:
@@ -477,7 +567,7 @@ async def v3_generate(url: str, instruction: str) -> Dict[str, Any]:
 
                 # Generate adaptive prompts
                 log_step("xpath_generation", "running", f"Generating XPath with Claude (attempt {attempt})")
-                system_prompt, user_prompt_template = generate_adaptive_prompt(instruction, attempt, enrichment_data)
+                system_prompt, user_prompt_template = generate_adaptive_prompt(instruction, attempt, enrichment_data, intent_summary)
 
                 user_prompt = user_prompt_template.format(url=url, html=simplified_html)
 
