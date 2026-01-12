@@ -66,7 +66,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -304,7 +304,7 @@ console.log('🔧 Storms proxy script injected');
 // Allow parent frame to inject highlighting scripts
 window.addEventListener('message', function(event) {
     console.log('📨 Received message:', event.data);
-    if (event.origin !== 'http://localhost:5173') {
+    if (event.origin !== 'http://localhost:5173' && event.origin !== 'http://127.0.0.1:5173') {
         console.log('❌ Wrong origin:', event.origin);
         return;
     }
